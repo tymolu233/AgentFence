@@ -1,0 +1,131 @@
+# AgentFence 内置规则 —— iac 类目
+# Portions adapted from roboticforce/agent-guardrails (MIT, (c) 2026 RoboticForce, Inc.)
+# 上游来源：https://github.com/roboticforce/agent-guardrails（terraform-guard.sh / settings.json / policies/terraform.md）
+
+- id: iac.terraform-destroy
+  category: iac
+  severity: critical
+  action: DENY # 来源事故：对含 prod state 的目录 destroy，连 RDS 与自动快照一并删除
+  priority: 60
+  match:
+    tool: shell
+    argv0: [terraform, tofu, terragrunt]
+    subcommand: [destroy]
+  refs:
+    - "https://github.com/roboticforce/agent-guardrails (MIT) — scripts/terraform-guard.sh"
+    - "https://github.com/roboticforce/agent-guardrails (MIT) — examples/incidents/（terraform destroy 毁 RDS 复盘）"
+  tests:
+    deny:
+      - "terraform destroy"
+      - "terragrunt destroy"
+      - "terraform destroy -auto-approve"
+    allow:
+      - "terraform plan"
+      - "terraform plan -destroy"
+
+- id: iac.apply-auto-approve
+  category: iac
+  severity: critical
+  action: DENY # 跳过人工确认
+  priority: 62
+  match:
+    tool: shell
+    argv0: [terraform, tofu, terragrunt]
+    subcommand: [apply]
+    flags_any:
+      auto-approve: "*" # -auto-approve / --auto-approve / --auto-approve=true
+  refs:
+    - "https://github.com/roboticforce/agent-guardrails (MIT) — scripts/terraform-guard.sh"
+    - "https://github.com/roboticforce/agent-guardrails (MIT) — policies/terraform.md"
+  tests:
+    deny:
+      - "terraform apply -auto-approve"
+      - "tofu apply --auto-approve"
+      - "terraform apply --auto-approve=true"
+    allow:
+      - "terraform apply"
+      - "terraform plan"
+
+- id: iac.state-mutation
+  category: iac
+  severity: critical
+  action: DENY # 改 state 造成漂移或覆盖远端 state
+  priority: 63
+  match:
+    tool: shell
+    any:
+      - argv0: [terraform, tofu, terragrunt]
+        subcommand: [state, rm]
+      - argv0: [terraform, tofu, terragrunt]
+        subcommand: [state, push]
+  refs:
+    - "https://github.com/roboticforce/agent-guardrails (MIT) — scripts/terraform-guard.sh"
+    - "https://github.com/roboticforce/agent-guardrails (MIT) — policies/terraform.md"
+  tests:
+    deny:
+      - "terraform state rm aws_db_instance.prod"
+      - "terraform state push errored.tfstate"
+    allow:
+      - "terraform state list"
+      - "terraform state show aws_db_instance.prod"
+
+- id: iac.state-force-unlock
+  category: iac
+  severity: high
+  action: REVIEW # 来源硬阻断；绕过 state 锁可能引发并发写损坏
+  priority: 64
+  match:
+    tool: shell
+    argv0: [terraform, tofu, terragrunt]
+    subcommand: [force-unlock]
+  refs:
+    - "https://github.com/roboticforce/agent-guardrails (MIT) — scripts/terraform-guard.sh"
+    - "https://github.com/roboticforce/agent-guardrails (MIT) — policies/terraform.md"
+  tests:
+    deny:
+      - "terraform force-unlock 9f3a2c1d"
+      - "terraform force-unlock -force 9f3a2c1d"
+    allow:
+      - "terraform plan"
+      - "terraform state list"
+
+- id: iac.terraform-import-unsafe
+  category: iac
+  severity: medium
+  action: REVIEW
+  priority: 65
+  match:
+    tool: shell
+    argv0: [terraform, tofu, terragrunt]
+    subcommand: [import]
+    flags_any:
+      allow-missing: "*" # 来源标记为危险的辅助标志
+  refs:
+    - "https://github.com/roboticforce/agent-guardrails (MIT) — scripts/terraform-guard.sh"
+    - "https://github.com/roboticforce/agent-guardrails (MIT) — policies/terraform.md"
+  tests:
+    deny:
+      - "terraform import --allow-missing aws_db_instance.db db"
+    allow:
+      - "terraform import aws_db_instance.db db"
+      - "terraform plan"
+
+- id: iac.pulumi-destroy
+  category: iac
+  severity: critical
+  action: DENY # 尤其带 --yes 跳过确认
+  priority: 61
+  match:
+    tool: shell
+    argv0: [pulumi]
+    subcommand: [destroy]
+  refs:
+    - "https://github.com/roboticforce/agent-guardrails (MIT) — settings.json deny 清单"
+    - "https://github.com/roboticforce/agent-guardrails (MIT) — policies/terraform.md"
+  tests:
+    deny:
+      - "pulumi destroy"
+      - "pulumi destroy --yes"
+    allow:
+      - "pulumi up"
+      - "pulumi preview"

@@ -1,0 +1,87 @@
+# AgentFence 内置规则 —— shell 类目
+# Portions adapted from roboticforce/agent-guardrails (MIT, (c) 2026 RoboticForce, Inc.)
+# 上游来源：https://github.com/roboticforce/agent-guardrails（cloud-guard.sh 尾部 Generic 段 + settings.json）
+
+- id: shell.dd-write-device
+  category: shell
+  severity: critical
+  action: DENY
+  priority: 80
+  match:
+    tool: shell
+    argv0: [dd]
+    args_regex:
+      - '/^of=\/dev\//i' # 输出目标为块设备
+  refs:
+    - "https://github.com/roboticforce/agent-guardrails (MIT) — scripts/cloud-guard.sh Generic 段"
+    - "docs/research/agent-guardrails.md"
+  tests:
+    deny:
+      - "dd if=/dev/zero of=/dev/sda"
+      - "dd of=/dev/nvme0n1 if=./img.iso"
+    allow:
+      - "dd if=/dev/zero of=./disk.img bs=1M count=10"
+      - "dd if=./disk.img of=./copy.img"
+
+- id: shell.format-device
+  category: shell
+  severity: critical
+  action: DENY
+  priority: 81
+  match:
+    tool: shell
+    argv0_regex: '/^mkfs(\..+)?$/i' # mkfs / mkfs.ext4 / mkfs.xfs / ...
+  refs:
+    - "https://github.com/roboticforce/agent-guardrails (MIT) — scripts/cloud-guard.sh Generic 段"
+    - "docs/research/agent-guardrails.md"
+  tests:
+    deny:
+      - "mkfs.ext4 /dev/sda1"
+      - "mkfs -t xfs /dev/sdb1"
+    allow:
+      - "mke2fs -t ext4 /dev/sdc1" # 未收录的同义工具，留给类目级兜底策略
+      - "lsblk"
+
+- id: shell.partition-tool
+  category: shell
+  severity: high
+  action: REVIEW # 来源为硬阻断；REVIEW 为本项目建议
+  priority: 82
+  match:
+    tool: shell
+    argv0: [fdisk, sfdisk, cfdisk, gdisk, sgdisk, parted]
+    args_regex:
+      - '/^\/dev\//i' # 操作目标为块设备
+  refs:
+    - "https://github.com/roboticforce/agent-guardrails (MIT) — scripts/cloud-guard.sh Generic 段"
+    - "docs/research/agent-guardrails.md"
+  tests:
+    deny:
+      - "fdisk /dev/sda"
+      - "parted /dev/sda mklabel gpt"
+    allow:
+      - "fdisk -l"
+      - "parted --list"
+
+- id: shell.docker-prune-all
+  category: shell
+  severity: high
+  action: REVIEW # 来源硬阻断 docker system prune -a；REVIEW 为本项目建议
+  priority: 83
+  match:
+    tool: shell
+    argv0: [docker, podman, nerdctl] # 等效命令，A6 易绕过清单第 2 条
+    subcommand: [system, prune]
+    flags:
+      all: "*" # -a / --all
+  refs:
+    - "https://github.com/roboticforce/agent-guardrails (MIT) — settings.json docker system prune -a"
+    - "docs/research/agent-guardrails.md"
+  tests:
+    deny:
+      - "docker system prune -a"
+      - "docker system prune --all --volumes"
+      - "podman system prune -a"
+    allow:
+      - "docker system prune"
+      - "docker image prune -a"

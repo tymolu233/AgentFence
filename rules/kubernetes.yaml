@@ -1,0 +1,124 @@
+# AgentFence 内置规则 —— kubernetes 类目
+# Portions adapted from roboticforce/agent-guardrails (MIT, (c) 2026 RoboticForce, Inc.)
+# 上游来源：https://github.com/roboticforce/agent-guardrails（kubernetes-guard.sh / policies/kubernetes.md）
+
+- id: k8s.delete-namespace
+  category: kubernetes
+  severity: critical
+  action: DENY # 整命名空间连锅端，含 secrets/PVC
+  priority: 50
+  match:
+    tool: shell
+    any:
+      - argv0: [kubectl]
+        subcommand: [delete, namespace]
+      - argv0: [kubectl]
+        subcommand: [delete, namespaces]
+      - argv0: [kubectl]
+        subcommand: [delete, ns]
+  refs:
+    - "https://github.com/roboticforce/agent-guardrails (MIT) — scripts/kubernetes-guard.sh"
+    - "https://github.com/roboticforce/agent-guardrails (MIT) — policies/kubernetes.md"
+  tests:
+    deny:
+      - "kubectl delete namespace production"
+      - "kubectl delete ns staging"
+    allow:
+      - "kubectl get namespaces"
+      - "kubectl delete pod web-0 -n production"
+
+- id: k8s.delete-bulk-all
+  category: kubernetes
+  severity: critical
+  action: DENY
+  priority: 51
+  match:
+    tool: shell
+    argv0: [kubectl]
+    subcommand: [delete]
+    flags_any:
+      all: "*" # --all / --all=true
+  refs:
+    - "https://github.com/roboticforce/agent-guardrails (MIT) — scripts/kubernetes-guard.sh"
+    - "https://github.com/roboticforce/agent-guardrails (MIT) — policies/kubernetes.md"
+  tests:
+    deny:
+      - "kubectl delete pods --all -n default"
+      - "kubectl delete --all --all-namespaces"
+      - "kubectl delete deployments --all=true"
+    allow:
+      - "kubectl delete pod web-0"
+      - "kubectl delete pods --all-namespaces" # 列举语义 flag，不等于 --all
+
+- id: k8s.delete-from-manifest
+  category: kubernetes
+  severity: high
+  action: REVIEW # 来源硬阻断；按清单删除在日常属合法操作
+  priority: 52
+  match:
+    tool: shell
+    argv0: [kubectl]
+    subcommand: [delete]
+    flags_any:
+      f: "*" # -f
+      filename: "*" # --filename / --filename=x
+  refs:
+    - "https://github.com/roboticforce/agent-guardrails (MIT) — scripts/kubernetes-guard.sh"
+    - "https://github.com/roboticforce/agent-guardrails (MIT) — policies/kubernetes.md"
+  tests:
+    deny:
+      - "kubectl delete -f k8s/prod-stack.yaml"
+      - "kubectl delete --filename=stack.yaml"
+    allow:
+      - "kubectl delete pod web-0"
+      - "kubectl apply -f k8s/"
+
+- id: k8s.drain-force
+  category: kubernetes
+  severity: high
+  action: REVIEW # 来源硬阻断且连 cordon 一起拦；cordon 可逆不收录
+  priority: 53
+  match:
+    tool: shell
+    argv0: [kubectl]
+    subcommand: [drain]
+    flags_any:
+      force: true
+      delete-emptydir-data: true
+  refs:
+    - "https://github.com/roboticforce/agent-guardrails (MIT) — scripts/kubernetes-guard.sh"
+    - "https://github.com/roboticforce/agent-guardrails (MIT) — policies/kubernetes.md"
+  tests:
+    deny:
+      - "kubectl drain node-1 --force --delete-emptydir-data"
+      - "kubectl drain node-1 --delete-emptydir-data"
+    allow:
+      - "kubectl drain node-1 --ignore-daemonsets"
+      - "kubectl cordon node-1"
+
+- id: k8s.helm-uninstall
+  category: kubernetes
+  severity: high
+  action: REVIEW # 来源硬阻断；删除整个 release 及其资源（可含 PVC）
+  priority: 54
+  match:
+    tool: shell
+    any:
+      - argv0: [helm]
+        subcommand: [uninstall]
+      - argv0: [helm]
+        subcommand: [delete]
+      - argv0: [helm]
+        subcommand: [del]
+      - argv0: [helm]
+        subcommand: [un]
+  refs:
+    - "https://github.com/roboticforce/agent-guardrails (MIT) — scripts/kubernetes-guard.sh"
+    - "https://github.com/roboticforce/agent-guardrails (MIT) — policies/kubernetes.md"
+  tests:
+    deny:
+      - "helm uninstall postgres -n data"
+      - "helm delete redis"
+    allow:
+      - "helm list -A"
+      - "helm upgrade postgres ./chart"

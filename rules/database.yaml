@@ -1,0 +1,310 @@
+# AgentFence 内置规则 —— database 类目
+# Portions adapted from roboticforce/agent-guardrails (MIT, (c) 2026 RoboticForce, Inc.)
+# 上游来源：https://github.com/roboticforce/agent-guardrails（database-guard.sh / prisma-guard.sh / settings.json / policies/databases.md）
+
+- id: db.sql-drop-database
+  category: database
+  severity: critical
+  action: DENY
+  priority: 10
+  match:
+    tool: shell
+    argv0: [mysql, mariadb, mysqlsh, psql, sqlcmd, clickhouse-client] # 字段路由：只对 SQL 客户端判内联语句
+    args_regex: # 对单条位置参数（内联 SQL）的有界正则；token 边界防 echo 误伤
+      - '/\bDROP\s+DATABASE\b/i'
+  refs:
+    - "https://github.com/roboticforce/agent-guardrails (MIT) — scripts/database-guard.sh"
+    - "https://github.com/roboticforce/agent-guardrails (MIT) — policies/databases.md"
+  tests:
+    deny:
+      - "mysql -e 'DROP DATABASE shop'"
+      - "psql -c \"drop database prod\""
+    allow:
+      - "mysql -e 'CREATE DATABASE shop'"
+      - "psql -c 'SELECT 1'"
+      - "echo \"how to drop database safely\""
+
+- id: db.sql-drop-table
+  category: database
+  severity: critical
+  action: DENY
+  priority: 11
+  match:
+    tool: shell
+    argv0: [mysql, mariadb, mysqlsh, psql, sqlcmd, clickhouse-client]
+    args_regex:
+      - '/\bDROP\s+TABLE\b/i'
+  refs:
+    - "https://github.com/roboticforce/agent-guardrails (MIT) — scripts/database-guard.sh"
+    - "https://github.com/roboticforce/agent-guardrails (MIT) — policies/databases.md"
+  tests:
+    deny:
+      - "psql -c 'DROP TABLE users'"
+      - "mysql -e \"drop table orders\""
+    allow:
+      - "psql -c 'SELECT * FROM users'"
+      - "mysql -e 'CREATE TABLE t (id INT)'"
+
+- id: db.sql-drop-schema
+  category: database
+  severity: critical
+  action: DENY
+  priority: 12
+  match:
+    tool: shell
+    argv0: [psql, sqlcmd] # PG / SQL Server
+    args_regex:
+      - '/\bDROP\s+SCHEMA\b/i'
+  refs:
+    - "https://github.com/roboticforce/agent-guardrails (MIT) — scripts/database-guard.sh"
+    - "https://github.com/roboticforce/agent-guardrails (MIT) — policies/databases.md"
+  tests:
+    deny:
+      - "psql -c 'DROP SCHEMA public CASCADE'"
+      - "sqlcmd -Q \"drop schema dbo\""
+    allow:
+      - "psql -c 'CREATE SCHEMA analytics'"
+
+- id: db.sql-truncate
+  category: database
+  severity: high
+  action: DENY # 来源对 TRUNCATE 一刀切硬阻断，含大小写变体
+  priority: 20
+  match:
+    tool: shell
+    argv0: [mysql, mariadb, mysqlsh, psql, sqlcmd, clickhouse-client]
+    args_regex:
+      - '/\bTRUNCATE\b/i'
+  refs:
+    - "https://github.com/roboticforce/agent-guardrails (MIT) — scripts/database-guard.sh"
+    - "https://github.com/roboticforce/agent-guardrails (MIT) — policies/databases.md"
+  tests:
+    deny:
+      - "psql -c 'TRUNCATE TABLE sessions'"
+      - "mysql -e \"truncate sessions\""
+    allow:
+      - "psql -c 'SELECT trunc(value, 2) FROM metrics'"
+      - "echo \"how to truncate safely\""
+
+- id: db.sql-delete-all-rows
+  category: database
+  severity: high
+  action: REVIEW # 来源无差别硬阻断；REVIEW 为本项目建议（降误报）
+  priority: 30
+  match:
+    tool: shell
+    argv0: [mysql, mariadb, mysqlsh, psql, sqlcmd, clickhouse-client]
+    args_regex:
+      - '/\bDELETE\s+FROM\b(?:(?!\bWHERE\b)[\s\S])*$/i' # 完全无 WHERE
+      - '/\bWHERE\s+(0?1\s*=\s*0?1|TRUE)\b/i' # 恒真条件
+  refs:
+    - "https://github.com/roboticforce/agent-guardrails (MIT) — scripts/database-guard.sh"
+    - "https://github.com/roboticforce/agent-guardrails (MIT) — policies/databases.md"
+  tests:
+    deny:
+      - "psql -c 'DELETE FROM sessions WHERE 1=1'"
+      - "psql -c 'DELETE FROM sessions'"
+    allow:
+      - "psql -c 'DELETE FROM sessions WHERE id = 7'"
+      - "mysql -e 'DELETE FROM t WHERE expired = 1 LIMIT 100'"
+
+- id: db.pg-dropdb
+  category: database
+  severity: critical
+  action: DENY
+  priority: 13
+  match:
+    tool: shell
+    argv0: [dropdb] # PostgreSQL 删库工具
+  refs:
+    - "https://github.com/roboticforce/agent-guardrails (MIT) — scripts/database-guard.sh"
+    - "https://github.com/roboticforce/agent-guardrails (MIT) — policies/databases.md"
+  tests:
+    deny:
+      - "dropdb production"
+      - "dropdb -h db.internal prod"
+    allow:
+      - "createdb staging"
+
+- id: db.redis-flush
+  category: database
+  severity: critical
+  action: DENY
+  priority: 14
+  match:
+    tool: shell
+    argv0: [redis-cli]
+    args_regex:
+      - '/^FLUSH(ALL|DB)\b/i'
+  refs:
+    - "https://github.com/roboticforce/agent-guardrails (MIT) — scripts/database-guard.sh"
+    - "https://github.com/roboticforce/agent-guardrails (MIT) — policies/databases.md"
+  tests:
+    deny:
+      - "redis-cli -h prod FLUSHALL"
+      - "redis-cli FLUSHDB"
+    allow:
+      - "redis-cli GET counter"
+      - "redis-cli -h prod INFO"
+
+- id: db.mongo-drop-database
+  category: database
+  severity: critical
+  action: DENY
+  priority: 15
+  match:
+    tool: shell
+    argv0: [mongosh, mongo] # 等效 CLI
+    args_regex:
+      - '/\bdropDatabase\s*\(/i'
+      - '/\.\s*drop\s*\(/i' # 集合级 drop
+  refs:
+    - "https://github.com/roboticforce/agent-guardrails (MIT) — scripts/database-guard.sh"
+    - "https://github.com/roboticforce/agent-guardrails (MIT) — policies/databases.md"
+  tests:
+    deny:
+      - "mongosh prod --eval 'db.dropDatabase()'"
+      - "mongo prod --eval \"db.sessions.drop()\""
+    allow:
+      - "mongosh prod --eval 'db.sessions.find()'"
+      - "mongosh prod --eval 'db.sessions.dropIndex(\"ts_1\")'"
+
+- id: db.prisma-shadow-database-url
+  category: database
+  severity: critical
+  action: DENY # 来源事故：Opus 5 将该标志指向 prod 连接串，Prisma reset 影子库时清光全部表
+  priority: 16
+  match:
+    tool: shell
+    argv0: [prisma]
+    flags_any:
+      shadow-database-url: "*" # 不论其值为何
+  refs:
+    - "https://github.com/roboticforce/agent-guardrails (MIT) — scripts/prisma-guard.sh"
+    - "https://github.com/roboticforce/agent-guardrails (MIT) — examples/incidents/（影子库事故复盘）"
+  tests:
+    deny:
+      - "prisma migrate diff --shadow-database-url=$DATABASE_URL --to-url $B"
+      - "prisma db pull --shadow-database-url postgres://prod"
+    allow:
+      - "prisma migrate diff --from-url $A --to-url $B"
+      - "prisma migrate status"
+
+- id: db.prisma-migrate-reset
+  category: database
+  severity: critical
+  action: DENY
+  priority: 17
+  match:
+    tool: shell
+    any:
+      - argv0: [prisma]
+        subcommand: [migrate, reset]
+      - argv0: [prisma]
+        subcommand: [migrate]
+        flags_any: { force: true } # migrate dev --force
+      - argv0: [prisma]
+        subcommand: [db, push]
+        flags_any: { force-reset: true }
+  refs:
+    - "https://github.com/roboticforce/agent-guardrails (MIT) — scripts/prisma-guard.sh"
+    - "https://github.com/roboticforce/agent-guardrails (MIT) — policies/databases.md"
+  tests:
+    deny:
+      - "prisma migrate reset"
+      - "prisma migrate dev --force"
+      - "prisma db push --force-reset"
+    allow:
+      - "prisma migrate dev"
+      - "prisma db push"
+      - "prisma migrate deploy"
+
+- id: db.prisma-accept-data-loss
+  category: database
+  severity: high
+  action: DENY
+  priority: 21
+  match:
+    tool: shell
+    argv0: [prisma]
+    flags_any:
+      accept-data-loss: true
+  refs:
+    - "https://github.com/roboticforce/agent-guardrails (MIT) — scripts/prisma-guard.sh"
+    - "https://github.com/roboticforce/agent-guardrails (MIT) — policies/databases.md"
+  tests:
+    deny:
+      - "prisma db push --accept-data-loss"
+      - "prisma migrate dev --accept-data-loss"
+    allow:
+      - "prisma db push"
+      - "prisma migrate dev"
+
+- id: db.orm-drop-reset
+  category: database
+  severity: critical
+  action: DENY
+  priority: 18
+  match:
+    tool: shell
+    any:
+      - argv0: [rails, rake]
+        args_regex:
+          - '/^db:(drop|migrate:reset)\b/i'
+      - argv0: [typeorm]
+        args_regex:
+          - '/^schema:drop$/i'
+      - argv0: [flyway]
+        subcommand: [clean]
+  refs:
+    - "https://github.com/roboticforce/agent-guardrails (MIT) — scripts/database-guard.sh"
+    - "https://github.com/roboticforce/agent-guardrails (MIT) — policies/databases.md"
+  tests:
+    deny:
+      - "rails db:drop"
+      - "rake db:migrate:reset"
+      - "typeorm schema:drop"
+      - "flyway clean"
+    allow:
+      - "rails db:migrate"
+      - "rails console"
+      - "typeorm migration:run"
+      - "flyway migrate"
+
+- id: db.orm-revert-rollback
+  category: database
+  severity: high
+  action: REVIEW # 来源一律硬阻断，但回滚在 dev 属常规操作
+  priority: 31
+  match:
+    tool: shell
+    any:
+      - argv0: [alembic]
+        subcommand: [downgrade]
+      - argv0: [sequelize]
+        args_regex:
+          - '/^(db:)?migrate:undo\b/i'
+      - argv0: [knex]
+        args_regex:
+          - '/^migrate:rollback\b/i'
+      - argv0: [typeorm]
+        args_regex:
+          - '/^migration:revert$/i'
+      - argv0: [flyway]
+        subcommand: [undo]
+  refs:
+    - "https://github.com/roboticforce/agent-guardrails (MIT) — scripts/database-guard.sh"
+    - "https://github.com/roboticforce/agent-guardrails (MIT) — policies/databases.md"
+  tests:
+    deny:
+      - "alembic downgrade -1"
+      - "sequelize db:migrate:undo"
+      - "knex migrate:rollback"
+      - "typeorm migration:revert"
+      - "flyway undo"
+    allow:
+      - "alembic upgrade head"
+      - "sequelize db:migrate"
+      - "knex migrate:latest"
+      - "typeorm migration:run"
+      - "flyway migrate"

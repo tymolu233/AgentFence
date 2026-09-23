@@ -1,0 +1,135 @@
+# AgentFence 内置规则 —— git 类目
+# Portions adapted from roboticforce/agent-guardrails (MIT, (c) 2026 RoboticForce, Inc.)
+# 上游来源：https://github.com/roboticforce/agent-guardrails（git-guard.sh / settings.json / policies/git.md）
+
+- id: git.force-push-protected
+  category: git
+  severity: high
+  action: DENY
+  priority: 70
+  match:
+    tool: shell
+    argv0: [git]
+    subcommand: [push]
+    flags_any: # flag 在任意位置均可（A6 易绕过清单第 1 条）
+      f: true
+      force: true
+      force-with-lease: "*"
+    args_regex: # 受保护分支（含 refspec 与 refs/heads/ 形态）
+      - '/^(refs\/heads\/)?(main|master|production)(:|$)/i'
+  refs:
+    - "https://github.com/roboticforce/agent-guardrails (MIT) — scripts/git-guard.sh"
+    - "https://github.com/roboticforce/agent-guardrails (MIT) — policies/git.md"
+  tests:
+    deny:
+      - "git push --force-with-lease origin main"
+      - "git push origin main -f"
+      - "git push --force origin refs/heads/master"
+    allow:
+      - "git push origin main"
+      - "git push --force origin feature-login"
+
+- id: git.reset-hard
+  category: git
+  severity: medium
+  action: REVIEW # 来源硬阻断；本地日常操作，降为 REVIEW
+  priority: 71
+  match:
+    tool: shell
+    argv0: [git]
+    subcommand: [reset]
+    flags:
+      hard: true
+  refs:
+    - "https://github.com/roboticforce/agent-guardrails (MIT) — scripts/git-guard.sh"
+    - "https://github.com/roboticforce/agent-guardrails (MIT) — policies/git.md"
+  tests:
+    deny:
+      - "git reset --hard HEAD~3"
+      - "git reset --hard"
+    allow:
+      - "git reset --soft HEAD~1"
+      - "git reset HEAD~1"
+
+- id: git.clean-force
+  category: git
+  severity: medium
+  action: REVIEW # 来源硬阻断；永久删除未跟踪文件
+  priority: 72
+  match:
+    tool: shell
+    argv0: [git]
+    subcommand: [clean]
+    flags_any:
+      f: true # -f（-fdx 组合短 flag 已拆分）
+      force: true # --force
+  refs:
+    - "https://github.com/roboticforce/agent-guardrails (MIT) — scripts/git-guard.sh"
+    - "https://github.com/roboticforce/agent-guardrails (MIT) — policies/git.md"
+  tests:
+    deny:
+      - "git clean -fd"
+      - "git clean -fdx"
+      - "git clean --force -d"
+    allow:
+      - "git clean -n"
+      - "git status"
+
+- id: git.discard-all-changes
+  category: git
+  severity: medium
+  action: REVIEW # 丢弃整个工作树改动
+  priority: 73
+  match:
+    tool: shell
+    any:
+      - argv0: [git]
+        subcommand: [checkout]
+        args_regex:
+          - '/^\.{1,2}(\/.*)?$/' # checkout -- . / checkout .
+      - argv0: [git]
+        subcommand: [restore]
+        args_regex:
+          - '/^\.{1,2}(\/.*)?$/' # restore .
+  refs:
+    - "https://github.com/roboticforce/agent-guardrails (MIT) — scripts/git-guard.sh"
+    - "https://github.com/roboticforce/agent-guardrails (MIT) — policies/git.md"
+  tests:
+    deny:
+      - "git checkout -- ."
+      - "git restore ."
+    allow:
+      - "git checkout -- src/app.ts"
+      - "git restore --staged src/app.ts"
+      - "git checkout main"
+
+- id: git.branch-force-delete-protected
+  category: git
+  severity: medium
+  action: REVIEW # 来源硬阻断
+  priority: 74
+  match:
+    tool: shell
+    any:
+      # -D 与 -d 归一后同为 d（git 语义上 -D ≡ -d --force，两式合取覆盖）
+      - argv0: [git]
+        subcommand: [branch]
+        flags_any: { d: true }
+        args_regex:
+          - '/^(refs\/heads\/)?(main|master|production)$/i'
+      - argv0: [git]
+        subcommand: [branch]
+        flags: { delete: true, force: true } # --delete --force
+        args_regex:
+          - '/^(refs\/heads\/)?(main|master|production)$/i'
+  refs:
+    - "https://github.com/roboticforce/agent-guardrails (MIT) — scripts/git-guard.sh"
+    - "https://github.com/roboticforce/agent-guardrails (MIT) — policies/git.md"
+  tests:
+    deny:
+      - "git branch -D main"
+      - "git branch --delete --force master"
+    allow:
+      - "git branch -d feature-x"
+      - "git branch -D feature-x"
+      - "git branch --list"

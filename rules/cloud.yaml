@@ -1,0 +1,179 @@
+# AgentFence 内置规则 —— cloud 类目
+# Portions adapted from roboticforce/agent-guardrails (MIT, (c) 2026 RoboticForce, Inc.)
+# 上游来源：https://github.com/roboticforce/agent-guardrails（cloud-guard.sh / settings.json / policies/cloud-providers.md）
+
+- id: cloud.aws-compute-terminate
+  category: cloud
+  severity: critical
+  action: DENY
+  priority: 40
+  match:
+    tool: shell
+    argv0: [aws]
+    subcommand: [ec2, terminate-instances]
+  refs:
+    - "https://github.com/roboticforce/agent-guardrails (MIT) — scripts/cloud-guard.sh"
+    - "https://github.com/roboticforce/agent-guardrails (MIT) — policies/cloud-providers.md"
+  tests:
+    deny:
+      - "aws ec2 terminate-instances --instance-ids i-0abc123"
+    allow:
+      - "aws ec2 describe-instances"
+      - "aws ec2 stop-instances --instance-ids i-0abc123"
+
+- id: cloud.aws-data-delete
+  category: cloud
+  severity: critical
+  action: DENY
+  priority: 41
+  match:
+    tool: shell
+    any:
+      - argv0: [aws]
+        subcommand: [rds, "delete-db-*"]
+      - argv0: [aws]
+        subcommand: [elasticache, "delete-*"]
+      - argv0: [aws]
+        subcommand: [s3, rb]
+      - argv0: [aws]
+        subcommand: [s3, rm]
+        flags_any: { recursive: true }
+      - argv0: [aws]
+        subcommand: [s3api, delete-bucket] # s3 rb 的等效 API 通道，A6 易绕过清单第 1 条
+  refs:
+    - "https://github.com/roboticforce/agent-guardrails (MIT) — scripts/cloud-guard.sh"
+    - "https://github.com/roboticforce/agent-guardrails (MIT) — policies/cloud-providers.md"
+  tests:
+    deny:
+      - "aws rds delete-db-instance --db-instance-identifier prod --skip-final-snapshot"
+      - "aws rds delete-db-cluster --db-cluster-identifier prod"
+      - "aws elasticache delete-cache-cluster --cache-cluster-id prod"
+      - "aws s3 rb s3://prod-backups --force"
+      - "aws s3 rm s3://prod-bucket --recursive"
+      - "aws s3api delete-bucket --bucket prod"
+    allow:
+      - "aws s3 rm s3://bucket/object.txt"
+      - "aws s3 ls"
+      - "aws rds describe-db-instances"
+
+- id: cloud.aws-stack-teardown
+  category: cloud
+  severity: critical
+  action: DENY # ecs delete-service 按来源建议另放 REVIEW，不在本条
+  priority: 42
+  match:
+    tool: shell
+    any:
+      - argv0: [aws]
+        subcommand: [cloudformation, delete-stack]
+      - argv0: [aws]
+        subcommand: [ecs, delete-cluster]
+      - argv0: [aws]
+        subcommand: [eks, delete-cluster]
+      - argv0: [aws]
+        subcommand: [route53, delete-hosted-zone]
+      - argv0: [aws]
+        subcommand: [lambda, delete-function]
+  refs:
+    - "https://github.com/roboticforce/agent-guardrails (MIT) — scripts/cloud-guard.sh"
+    - "https://github.com/roboticforce/agent-guardrails (MIT) — policies/cloud-providers.md"
+  tests:
+    deny:
+      - "aws cloudformation delete-stack --stack-name prod"
+      - "aws eks delete-cluster --name prod"
+      - "aws lambda delete-function --function-name worker"
+    allow:
+      - "aws ecs delete-service --cluster prod --service web"
+      - "aws cloudformation describe-stacks"
+
+- id: cloud.gcp-resource-delete
+  category: cloud
+  severity: critical
+  action: DENY
+  priority: 43
+  match:
+    tool: shell
+    any:
+      - argv0: [gcloud]
+        subcommand: [compute, instances, delete]
+      - argv0: [gcloud]
+        subcommand: [sql, instances, delete]
+      - argv0: [gcloud]
+        subcommand: [container, clusters, delete]
+      - argv0: [gcloud]
+        subcommand: [projects, delete]
+      - argv0: [gcloud]
+        subcommand: [app, services, delete]
+  refs:
+    - "https://github.com/roboticforce/agent-guardrails (MIT) — scripts/cloud-guard.sh"
+    - "https://github.com/roboticforce/agent-guardrails (MIT) — policies/cloud-providers.md"
+  tests:
+    deny:
+      - "gcloud compute instances delete prod-1 --zone us-central1-a"
+      - "gcloud projects delete my-prod-project"
+      - "gcloud container clusters delete prod-cluster"
+    allow:
+      - "gcloud compute instances list"
+      - "gcloud compute instances stop prod-1"
+
+- id: cloud.azure-resource-delete
+  category: cloud
+  severity: critical
+  action: DENY
+  priority: 44
+  match:
+    tool: shell
+    any:
+      - argv0: [az]
+        subcommand: [vm, delete]
+      - argv0: [az]
+        subcommand: [sql, db, delete]
+      - argv0: [az]
+        subcommand: [sql, server, delete]
+      - argv0: [az]
+        subcommand: [group, delete]
+      - argv0: [az]
+        subcommand: [aks, delete]
+      - argv0: [az]
+        subcommand: [webapp, delete]
+  refs:
+    - "https://github.com/roboticforce/agent-guardrails (MIT) — scripts/cloud-guard.sh"
+    - "https://github.com/roboticforce/agent-guardrails (MIT) — policies/cloud-providers.md"
+  tests:
+    deny:
+      - "az vm delete --name prod --resource-group prod-rg"
+      - "az group delete --name production-rg"
+      - "az aks delete --name prod --resource-group prod-rg"
+    allow:
+      - "az vm list"
+      - "az group show --name production-rg"
+
+- id: cloud.digitalocean-delete
+  category: cloud
+  severity: high
+  action: DENY
+  priority: 45
+  match:
+    tool: shell
+    any:
+      - argv0: [doctl]
+        subcommand: [compute, droplet, "delete*"]
+      - argv0: [doctl]
+        subcommand: [droplet, "delete*"]
+      - argv0: [doctl]
+        subcommand: ["database*", "delete*"]
+      - argv0: [doctl]
+        subcommand: [kubernetes, "cluster*", "delete*"]
+      - argv0: [doctl]
+        subcommand: ["volume*", "delete*"]
+  refs:
+    - "https://github.com/roboticforce/agent-guardrails (MIT) — scripts/cloud-guard.sh"
+    - "https://github.com/roboticforce/agent-guardrails (MIT) — policies/cloud-providers.md"
+  tests:
+    deny:
+      - "doctl database delete prod-db"
+      - "doctl compute droplet delete 12345"
+      - "doctl kubernetes cluster delete prod-cluster"
+    allow:
+      - "doctl database list"
+      - "doctl compute droplet get 12345"

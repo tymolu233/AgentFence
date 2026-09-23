@@ -1,0 +1,29 @@
+# AgentFence 内置规则 —— filesystem 类目
+# Portions adapted from roboticforce/agent-guardrails (MIT, (c) 2026 RoboticForce, Inc.)
+# 上游来源：https://github.com/roboticforce/agent-guardrails（settings.json deny 清单）
+
+- id: fs.rm-recursive-guarded-path
+  category: filesystem
+  severity: critical
+  action: DENY
+  priority: 90
+  match:
+    tool: shell
+    argv0: [rm]
+    flags:
+      recursive: true # -r / -R / --recursive 归一化
+    target_guarded: true # 语义谓词：目标为 / ~ . .. $HOME 等守卫位置
+  refs:
+    - "https://github.com/roboticforce/agent-guardrails (MIT) — settings.json deny 清单"
+    - "docs/research/agent-guardrails.md"
+  tests:
+    deny:
+      - "rm -rf /"
+      - "rm -rf ~"
+      - "rm -rf ."
+      - "rm -rf /*"
+      - "rm -r --no-preserve-root /"
+    allow:
+      - "rm -rf ./node_modules"
+      - "rm -r ./build"
+      - "rm -f ./tmp.txt"
