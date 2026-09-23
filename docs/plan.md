@@ -38,7 +38,7 @@
 | ID | 任务 | 产出 | 状态 |
 |---|---|---|---|
 | C1 | Generic SDK 接入示例（LangChain 等任意框架，Tier 3） | `examples/` | 待办 |
-| C2 | 二线宿主补充适配：Copilot CLI / ACP 代理 / pi 完成；Grok 适配改以官方 Rust 版 `xai-org/grok-build` 为目标（superagent-ai 社区延续版不开发，已撤） | `integrations/{copilot,acp,pi,grok-build}` | 进行中（agent） |
+| C2 | 二线宿主补充适配：Copilot CLI / ACP 代理 / pi / grok-build（官方 Rust 版，原生三档 ask、全工具+MCP 覆盖） | `integrations/{copilot,acp,pi,grok-build}` | 完成 |
 | C3 | MCP 拦截（**按需触发**，见下） | `integrations/mcp` | 暂缓 |
 | C4 | ~~Pentest Policy 与 Target Authorization~~ | — | 暂缓 |
 
