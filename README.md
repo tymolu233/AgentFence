@@ -9,7 +9,7 @@ AgentFence 不判断"Agent 想完成什么"，只判断：**这个 Tool Call 是
 - 全量审计：ALLOW 与 DENY 都记录
 - 形态：Go 核心 + CLI + HTTP API + Python SDK
 
-详见 `docs/architecture.md`（架构地图，权威）；原始思路稿存档于 `docs/vision.md`；参考项目学习路线见 `docs/references.md`。
+详见 `docs/architecture.md`（架构地图，权威）；原始思路稿存档于 `docs/vision.md`；参考项目学习路线见 `docs/references.md`；任务分解见 `docs/plan.md`。
 
 ## 演进路线
 

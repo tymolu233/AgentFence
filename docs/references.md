@@ -59,6 +59,6 @@ AgentFence 不重复造轮子：六个项目各学一样东西，组合成面向
 ## 执行约束
 
 - **时间盒**：前三个项目每个 1–2 天，后三个每个半天 skim；超时就停，回头写代码时按需补读。
-- **固定产出**：每个项目读完只留三张笔记进 `.agents/notes/`——Tool Call 数据结构、决策流程、Hook/Gateway 边界。
+- **固定产出**：每个项目读完留一份报告进 `docs/research/`——Tool Call 数据结构、决策流程、Hook/Gateway 边界三节；调研催生的决策另写 `.agents/notes/`。任务分解见 `docs/plan.md`。
 - **License**：WhitzardAgent/AgentGuard 为 GPL-3.0；其余亦在引用前核对。学规则设计与架构划分，不复制代码。
 - 第一周不写业务代码，先把 jev-guard → Vigil → DeepintShield 三个项目看透。
