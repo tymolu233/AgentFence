@@ -17,8 +17,8 @@ AgentFence 不判断"Agent 想完成什么"，只判断：**这个 Tool Call 是
 | 版本 | 内容 |
 |---|---|
 | v0.1 | 四模块闭环：rule-engine / policy-engine / jev-judge（接口先行，默认关闭）/ gateway；首个接入 OpenCode，全量审计 |
-| v0.2 | Pentest Policy、Target Authorization；generic SDK 示例 |
-| v0.3 | 二线宿主适配（Copilot CLI / ACP / pi）；MCP 拦截按需触发 |
+| v0.2 | generic SDK 示例；二线宿主适配（Copilot CLI / ACP / pi） |
+| v0.3 | Pentest Policy、Target Authorization（暂缓）；MCP 拦截按需触发 |
 | v0.4 | Docker Sandbox、网络隔离 |
 | v0.5 | Skill Scanner、审计增强 |
 

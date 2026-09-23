@@ -37,12 +37,14 @@
 
 | ID | 任务 | 产出 | 状态 |
 |---|---|---|---|
-| C1 | Pentest Policy 与 Target Authorization（差异化能力，原 v0.3 提前） | `rules/pentest.yaml`、`policies/`、`examples/pentest.agentfence.yaml` | 进行中（agent） |
-| C2 | Generic SDK 接入示例（LangChain 等任意框架，Tier 3） | `examples/` | 待办 |
-| C3 | 二线宿主补充适配：Copilot CLI / ACP 代理 / pi（方言见 A1 报告） | `integrations/{copilot,acp,pi}` | 待办 |
-| C4 | MCP 拦截（**按需触发**，见下） | `integrations/mcp` | 暂缓 |
+| C1 | Generic SDK 接入示例（LangChain 等任意框架，Tier 3） | `examples/` | 待办 |
+| C2 | 二线宿主补充适配：Copilot CLI / ACP 代理 / pi（方言见 A1 报告） | `integrations/{copilot,acp,pi}` | 待办 |
+| C3 | MCP 拦截（**按需触发**，见下） | `integrations/mcp` | 暂缓 |
+| C4 | ~~Pentest Policy 与 Target Authorization~~ | — | 暂缓 |
 
-**C4 暂缓理由**（2026-09-23 讨论）：五家 Tier-1 宿主的 hook 已覆盖 MCP 来源的 tool call（MCP 工具在 PreToolUse 里就是普通 `mcp__server__tool` 调用），MCP 代理拦截的是同批流量；其独有价值在 server 端信任（tool schema 钉住、行为漂移检测），属另一威胁模型。触发条件：出现只有 MCP 没有 hook 的目标宿主，或启动 server 端信任功能；届时按 hidearmoon 的 stdio 代理模式做轻量拦截，不做网关产品。
+**C4 暂缓理由**（2026-09-23 用户决定）：pentest / 网络安全方向先不开发，资源集中在通用执行安全边界。原有设计（vision §17 分级梯子、target 授权）保留在 `docs/vision.md`，重启时直接引用。
+
+**C3 暂缓理由**（2026-09-23 讨论）：五家 Tier-1 宿主的 hook 已覆盖 MCP 来源的 tool call（MCP 工具在 PreToolUse 里就是普通 `mcp__server__tool` 调用），MCP 代理拦截的是同批流量；其独有价值在 server 端信任（tool schema 钉住、行为漂移检测），属另一威胁模型。触发条件：出现只有 MCP 没有 hook 的目标宿主，或启动 server 端信任功能；届时按 hidearmoon 的 stdio 代理模式做轻量拦截，不做网关产品。
 
 ## v0.1 验收
 

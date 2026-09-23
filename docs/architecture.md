@@ -69,8 +69,8 @@ policies/  examples/  tests/  docs/
 ## 演进路线
 
 - v0.1 四个模块最小闭环：rules（Vigil 思路）、policy（DeepintShield 思路）、judge（jev-guard 思路，接口先行、默认关闭）、engine 编排（Guardian/AgentGuard 思路）；首个接入 OpenCode，产出 ALLOW / REVIEW / DENY。审计自 v0.1 起全量记录。不做 Dashboard、Cloud、大量框架适配、ML/自训模型。
-- v0.2 Pentest Policy 与 Target Authorization（差异化能力）；generic SDK 示例
-- v0.3 二线宿主适配（Copilot CLI / ACP / pi）；MCP 拦截按需触发（理由见 `docs/plan.md` Phase C）
+- v0.2 generic SDK 示例；二线宿主适配（Copilot CLI / ACP / pi）
+- v0.3 Pentest Policy 与 Target Authorization（暂缓，见 `docs/plan.md` Phase C）；MCP 拦截按需触发
 - v0.4 Docker Sandbox 与网络隔离
 - v0.5 Skill Scanner、审计增强（防篡改链）
 
