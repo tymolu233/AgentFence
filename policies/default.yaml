@@ -1,0 +1,63 @@
+# AgentFence 内置环境策略（vision.md 第 15 节形状）。
+# 加载经 src/policy/loader.ts 校验：闭集字段写错即 PolicyLoadError（fail-closed）。
+version: 1
+
+mode: fail_closed
+enforcement: enforce
+
+# 环境策略：policy.<environment>.<action_class> = allow|review|deny
+# action_class 闭集：read / write / destructive / credential_access /
+#                    network_exfiltration / reverse_shell
+policy:
+  production:
+    destructive: deny
+    credential_access: deny
+  sandbox:
+    destructive: review
+
+# autonomy budget：规则层风险达 HIGH 时把 ALLOW 降级为 REVIEW（只降级，不升级）
+autonomy_budget:
+  downgrade_allow_at: HIGH
+
+# 结构化策略规则：priority 数字小者先判，首个全部条件命中（AND）的规则胜出。
+# 条件字段闭集：agent / target / tool / action / environment / risk
+# 算子闭集：eq / ne / in / not_in
+rules:
+  - id: policy.production.destructive-agent
+    priority: 10
+    verdict: DENY
+    reason: destructive agent action against production target
+    conditions:
+      - { field: target, operator: eq, value: production }
+      - { field: action, operator: in, value: [delete, destroy, drop, truncate, destructive] }
+
+  - id: policy.production.credential-access
+    priority: 20
+    verdict: DENY
+    reason: credential access against production target
+    conditions:
+      - { field: target, operator: eq, value: production }
+      - { field: action, operator: in, value: [credential_access, read_credential, export_credential] }
+
+  - id: policy.sandbox.destructive-agent
+    priority: 30
+    verdict: REVIEW
+    reason: destructive action in sandbox requires review
+    conditions:
+      - { field: environment, operator: eq, value: sandbox }
+      - { field: action, operator: in, value: [delete, destroy, drop, truncate, destructive] }
+
+  - id: policy.untrusted-agent.credential-access
+    priority: 40
+    verdict: REVIEW
+    reason: credential access from non-allowlisted agent requires review
+    conditions:
+      - { field: agent, operator: not_in, value: [trusted-ci, release-bot] }
+      - { field: action, operator: in, value: [credential_access, read_credential, export_credential] }
+
+  - id: policy.read.recon
+    priority: 100
+    verdict: ALLOW
+    reason: read-only reconnaissance action
+    conditions:
+      - { field: action, operator: in, value: [read, query, get, list] }
