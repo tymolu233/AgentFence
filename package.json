@@ -4,6 +4,9 @@
   "description": "Security gateway for AI agent tool calls",
   "type": "module",
   "private": true,
+  "bin": {
+    "agentfence": "dist/src/cli/index.js"
+  },
   "engines": {
     "node": ">=22"
   },
