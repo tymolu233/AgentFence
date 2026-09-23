@@ -7,7 +7,7 @@ AgentFence 不判断"Agent 想完成什么"，只判断：**这个 Tool Call 是
 - 三态决策：ALLOW / REVIEW / DENY，附 risk 与 confidence；无法判断时 fail-closed
 - 七层管线：Tool/Skill ACL → Command Parser（AST 级）→ Hard Rules → Policy Engine（OPA/Rego）→ AI Risk Judge → Approval → Audit；Sandbox 兜底
 - 全量审计：ALLOW 与 DENY 都记录
-- 适配主流 Agent：OpenCode / Claude Code / Codex CLI / Gemini CLI / Cursor（原生 hook）、一切 MCP host（MCP Gateway）、任意框架（HTTP API + 薄 SDK）
+- 适配主流 Agent：OpenCode / Claude Code / Codex CLI / Gemini CLI / Cursor（原生 hook）、任意框架（HTTP API + 薄 SDK）；MCP 拦截按需触发
 - 形态：TypeScript 核心（Node ≥22，strict）+ CLI + HTTP Decision API（跨语言契约）；Python SDK 在 Phase C 提供
 
 详见 `docs/architecture.md`（架构地图，权威）；原始思路稿存档于 `docs/vision.md`；参考项目学习路线见 `docs/references.md`；任务分解见 `docs/plan.md`。
@@ -17,8 +17,8 @@ AgentFence 不判断"Agent 想完成什么"，只判断：**这个 Tool Call 是
 | 版本 | 内容 |
 |---|---|
 | v0.1 | 四模块闭环：rule-engine / policy-engine / jev-judge（接口先行，默认关闭）/ gateway；首个接入 OpenCode，全量审计 |
-| v0.2 | MCP Gateway 接入（一次覆盖所有 MCP host） |
-| v0.3 | Pentest Policy、Target Authorization；Claude Code / Codex CLI / Gemini CLI / Cursor 适配器 |
+| v0.2 | Pentest Policy、Target Authorization；generic SDK 示例 |
+| v0.3 | 二线宿主适配（Copilot CLI / ACP / pi）；MCP 拦截按需触发 |
 | v0.4 | Docker Sandbox、网络隔离 |
 | v0.5 | Skill Scanner、审计增强 |
 

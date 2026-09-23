@@ -35,7 +35,7 @@ ALLOW 之后由 **Sandbox** 兜底：即使前五层判错，Docker / VM / names
 适配市面主流 Agent 是一等目标，按三层覆盖：
 
 - **Tier 1 · 原生 Hook** — OpenCode（plugin）、Claude Code（PreToolUse hook）、Codex CLI、Gemini CLI、Cursor：逐个实现适配器，挂接各 agent 的 pre-tool-use 点位。
-- **Tier 2 · MCP Gateway** — 以 MCP 代理覆盖所有 MCP host，一次适配最大覆盖面。
+- **Tier 2 · MCP 拦截（按需）** — 仅当出现"只有 MCP 没有 hook"的宿主、或启动 server 端信任（tool schema 钉住、行为漂移检测）时，按 stdio 代理模式做轻量拦截；不做网关产品。暂缓理由见 `docs/plan.md` Phase C。
 - **Tier 3 · Generic** — HTTP Decision API + 薄 SDK，任意框架（LangChain / CrewAI / AutoGen 等）自行接入。
 
 适配器只做协议转换：把各 agent 的 tool call 事件映射为统一 `ToolCall`，把 `Decision` 映射回各 agent 的放行/阻断语义；判定逻辑只在核心一份。
@@ -69,8 +69,8 @@ policies/  examples/  tests/  docs/
 ## 演进路线
 
 - v0.1 四个模块最小闭环：rules（Vigil 思路）、policy（DeepintShield 思路）、judge（jev-guard 思路，接口先行、默认关闭）、engine 编排（Guardian/AgentGuard 思路）；首个接入 OpenCode，产出 ALLOW / REVIEW / DENY。审计自 v0.1 起全量记录。不做 Dashboard、Cloud、大量框架适配、ML/自训模型。
-- v0.2 MCP Gateway 接入（一次覆盖所有 MCP host）
-- v0.3 Pentest Policy 与 Target Authorization；Claude Code / Codex CLI / Gemini CLI / Cursor 适配器
+- v0.2 Pentest Policy 与 Target Authorization（差异化能力）；generic SDK 示例
+- v0.3 二线宿主适配（Copilot CLI / ACP / pi）；MCP 拦截按需触发（理由见 `docs/plan.md` Phase C）
 - v0.4 Docker Sandbox 与网络隔离
 - v0.5 Skill Scanner、审计增强（防篡改链）
 
