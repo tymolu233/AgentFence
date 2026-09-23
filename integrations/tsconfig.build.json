@@ -1,0 +1,15 @@
+{
+  // 适配层产物构建：tsc -p integrations/tsconfig.build.json
+  // 输出到根 dist/（rootDir 为仓库根），得到 dist/integrations/<host>/index.js，
+  // 与根构建的 dist/src/** 同树；各宿主 hooks 配置指向该产物（见各适配器 README）。
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "declaration": true,
+    "sourceMap": true,
+    "outDir": "../dist",
+    "rootDir": ".."
+  },
+  "include": ["**/*.ts", "../src/**/*.ts"],
+  "exclude": ["**/*.test.ts", "core/testing.ts"]
+}

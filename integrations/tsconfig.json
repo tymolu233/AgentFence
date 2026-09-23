@@ -1,0 +1,13 @@
+{
+  // 适配层独立的 typecheck / lint 工程：根 tsconfig 只 include src/**，
+  // 本文件把 integrations/** 纳入 strict 检查（eslint projectService 也走这里）。
+  // 不产物（noEmit）；产物构建见 tsconfig.build.json。
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "declaration": false,
+    "sourceMap": false,
+    "rootDir": ".."
+  },
+  "include": ["**/*.ts", "../src/**/*.ts"]
+}
