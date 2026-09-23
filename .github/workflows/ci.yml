@@ -1,4 +1,4 @@
-# 最小 CI 红线。按目标语言替换 lint / typecheck / test 命令。
+# 最小 CI 红线。Go 核心 + Python SDK 双语言；无对应代码时跳过对应 job。
 # 原则：分支保护 + 必须绿才能合并；全量检查归 CI，本地只跑与改动匹配的最小集。
 name: ci
 on:
@@ -7,18 +7,31 @@ on:
     branches: [main, master]
 
 jobs:
-  check:
+  # L0 三件套：lint / 类型（vet）/ 测试。任一失败即红。
+  go:
     runs-on: ubuntu-latest
+    if: hashFiles('go.mod') != ''
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-go@v5
         with:
-          node-version: 22
-      - run: npm ci
-      # L0 三件套：lint / 类型 / 测试。任一失败即红。
-      - run: npm run lint
-      - run: npm run typecheck
-      - run: npm test
+          go-version: '1.23'
+      - run: go build ./...
+      - run: go vet ./...
+      - run: go test ./...
+
+  python:
+    runs-on: ubuntu-latest
+    if: hashFiles('sdk/python/pyproject.toml') != '' || hashFiles('pyproject.toml') != ''
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -e .[dev] || pip install -e sdk/python[dev]
+      - run: ruff check .
+      - run: mypy --strict .
+      - run: pytest
 
   # L1 可选：新增代码覆盖率门禁（需要 diff-cover 或等价工具）
   # coverage:
@@ -26,5 +39,5 @@ jobs:
   #   steps:
   #     - uses: actions/checkout@v4
   #       with: { fetch-depth: 0 }
-  #     - run: npm ci && npm run coverage
-  #     - run: diff-cover coverage/lcov.info --compare-branch=origin/main --fail-under=100
+  #     - run: go test ./... -coverprofile=coverage.out
+  #     - run: diff-cover coverage.out --compare-branch=origin/main --fail-under=100
