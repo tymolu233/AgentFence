@@ -8,7 +8,7 @@ AgentFence 不判断"Agent 想完成什么"，只判断：**这个 Tool Call 是
 - 七层管线：Tool/Skill ACL → Command Parser（AST 级）→ Hard Rules → Policy Engine（OPA/Rego）→ AI Risk Judge → Approval → Audit；Sandbox 兜底
 - 全量审计：ALLOW 与 DENY 都记录
 - 适配主流 Agent：OpenCode / Claude Code / Codex CLI / Gemini CLI / Cursor（原生 hook）、一切 MCP host（MCP Gateway）、任意框架（HTTP API + 薄 SDK）
-- 语言不限定：判定逻辑只实现一份，HTTP Decision API 为跨语言契约；核心语言按 agent 生态适配性选定（候选 TypeScript / Go / Python）
+- 形态：TypeScript 核心（Node ≥22，strict）+ CLI + HTTP Decision API（跨语言契约）；Python SDK 在 Phase C 提供
 
 详见 `docs/architecture.md`（架构地图，权威）；原始思路稿存档于 `docs/vision.md`；参考项目学习路线见 `docs/references.md`；任务分解见 `docs/plan.md`。
 
