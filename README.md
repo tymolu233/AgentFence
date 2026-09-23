@@ -46,6 +46,10 @@ node dist/src/cli/index.js exec -- <command>
 | Codex CLI | hook（REVIEW 降级为警告放行） | [integrations/codex](integrations/codex/README.md) |
 | Gemini CLI | hook（REVIEW 降级为警告放行） | [integrations/gemini-cli](integrations/gemini-cli/README.md) |
 | Cursor | beforeShellExecution / beforeMCPExecution / preToolUse | [integrations/cursor](integrations/cursor/README.md) |
+| Copilot CLI | PreToolUse hook（原生 ask） | [integrations/copilot](integrations/copilot/README.md) |
+| pi | 进程内扩展（无 UI 时 REVIEW 降级 block） | [integrations/pi](integrations/pi/README.md) |
+| ACP 宿主（Zed 等） | JSON-RPC stdio 代理（原生 ask） | [integrations/acp](integrations/acp/README.md) |
+| Grok CLI（社区延续版） | PreToolUse hook（REVIEW 降级 block） | [integrations/grok-cli](integrations/grok-cli/README.md) |
 
 任意其他框架可直接调判定 API（见 `src/api/types.ts` 的 `ToolCall` / `Decision` 契约）。
 

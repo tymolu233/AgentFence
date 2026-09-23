@@ -16,6 +16,11 @@
  * | cursor preToolUse            | 无  | 警告放行（user_message + allow）   |
  * | opencode tool.execute.before | 无  | 阻断（throw，fail-closed）         |
  * | opencode permission.ask      | 有  | ask（原生，output.status = "ask"） |
+ * | copilot PreToolUse           | 有  | ask（原生 permissionDecision）     |
+ * | pi tool_call（有 UI）        | 有  | ask（适配器驱动 ctx.ui.confirm）   |
+ * | pi tool_call（无 UI）        | 无  | 阻断（block，fail-closed）         |
+ * | acp terminal/create 等       | 有  | ask（session/request_permission）  |
+ * | grok-cli PreToolUse          | 无  | 阻断（exit 2 + stderr，fail-closed）|
  *
  * 降级取舍的理由：
  * - Codex / Gemini / Cursor preToolUse 选"警告放行"：沿用 jev-guard 在这些
@@ -25,6 +30,9 @@
  *   且 OpenCode 对危险工具自带权限提示，permission.ask 钩子在那里提供原生
  *   ask； REVIEW 在 before 里阻断与 pi "无 UI 时 ask 直接 block" 同族，
  *   符合 AgentFence fail-closed 姿态（不变量 5）。
+ * - grok-cli 选"阻断"：hook 输出只有 approve/block 两档，且 additionalContext
+ *   / reason 字段在当前版本无人消费（警告无处可达），REVIEW 静默放行无任何
+ *   用户可见性 —— 不如 block（stderr 原因会送达 agent 转告用户）。
  */
 import type { Decision } from "../../src/api/types.js";
 import type { CursorEvent, HostDialect } from "./types.js";
@@ -66,6 +74,24 @@ const MATRIX: Record<HostDialect, HostCapability & Partial<Record<CursorEvent, H
     ask: false,
     review: "block",
     note: "tool.execute.before 无 ask 能力，REVIEW 按 fail-closed 降级为 throw 阻断；原生 ask 由 permission.ask 钩子承接",
+  },
+  copilot: {
+    ...WITH_ASK,
+    note: "Copilot CLI 的 PreToolUse 契约同 Claude Code 三档齐全（云端 agent 形态下宿主自身把 ask 当 deny 处理）",
+  },
+  pi: {
+    ask: false,
+    review: "block",
+    note: "pi 无 UI（hasUI=false）时 REVIEW 按 fail-closed 降级为 block；有 UI 时适配器改经 ctx.ui.confirm 审批",
+  },
+  acp: {
+    ...WITH_ASK,
+    note: "ACP 客户端支持 session/request_permission，REVIEW 由代理向客户端发起审批",
+  },
+  "grok-cli": {
+    ask: false,
+    review: "block",
+    note: "grok-cli hook 只有 approve/block 两档且无警告通道（additionalContext 无人消费），REVIEW 按 fail-closed 降级为 block（exit 2 + stderr）",
   },
 };
 

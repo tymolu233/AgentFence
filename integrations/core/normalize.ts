@@ -58,10 +58,16 @@ function baseCall(
   };
 }
 
-/** Claude Code / Codex：PascalCase 事件 + tool_name + tool_input 对象 */
+/**
+ * Claude Code / Codex / Copilot / grok-cli：PascalCase 事件 + tool_name +
+ * tool_input 对象。Copilot 多一个 ISO timestamp 字段（归一化忽略，只做
+ * 方言识别特征）；grok-cli 的 PreToolUse 形状与 Claude Code 完全同形
+ * （superagent-ai/grok-cli src/hooks/types.ts PreToolUseHookInput），
+ * 只能靠安装点位钉方言区分。
+ */
 function normalizeClaudeStyle(
   payload: Record<string, unknown>,
-  dialect: "claude-code" | "codex",
+  dialect: "claude-code" | "codex" | "copilot" | "grok-cli",
 ): NormalizedHook {
   const event = asString(payload.hook_event_name) ?? "PreToolUse";
   if (event !== "PreToolUse") {
@@ -164,14 +170,19 @@ export function normalizePayload(
   switch (dialect) {
     case "claude-code":
     case "codex":
+    case "copilot":
+    case "grok-cli":
       return normalizeClaudeStyle(payload, dialect);
     case "gemini-cli":
       return normalizeGemini(payload);
     case "cursor":
       return normalizeCursor(payload);
     case "opencode":
-      // OpenCode 是进程内插件，不走 stdin payload；用 normalizeOpenCodeCall
-      fail("opencode 方言无 stdin payload，请用 normalizeOpenCodeCall");
+    case "pi":
+    case "acp":
+      // opencode/pi 是进程内插件、acp 是 JSON-RPC 代理，均不走 stdin payload；
+      // 各有专用归一化入口（normalizeOpenCodeCall / normalizePiCall / normalizeAcpRequest）
+      fail(`${dialect} 方言无 stdin payload，请用专用归一化入口`);
   }
 }
 
@@ -193,4 +204,71 @@ export function normalizeOpenCodeCall(
     tool: toToolRef(toolName),
     input: args,
   };
+}
+
+/**
+ * pi 进程内扩展的归一化入口：tool_call 事件的 event.toolName + event.input
+ * （调研报告 extensions/jev-guard.ts:14-17 段）。ctx.cwd 进 context。
+ */
+export function normalizePiCall(
+  toolName: unknown,
+  input: unknown,
+  extra: { cwd?: string; sessionId?: string } = {},
+): ToolCall {
+  const name = asString(toolName) ?? fail("pi tool_call 的 toolName 缺失或不是非空字符串");
+  if (input !== undefined && !isRecord(input)) fail("pi tool_call 的 input 必须是对象");
+  return {
+    request_id: randomUUID(),
+    agent_id: "pi",
+    ...(extra.sessionId !== undefined ? { session_id: extra.sessionId } : {}),
+    tool: toToolRef(name),
+    input: input ?? {},
+    ...(extra.cwd !== undefined ? { context: { cwd: extra.cwd } } : {}),
+  };
+}
+
+/** ACP 代理把守的两个 agent→client 执行前方法（其余方法直通不判定） */
+export const ACP_GUARDED_METHODS = new Set(["terminal/create", "fs/write_text_file"]);
+
+/**
+ * ACP JSON-RPC 请求的归一化入口（调研报告 src/acp.js:44-49 段）：
+ *   terminal/create      {sessionId, command, args?, cwd?} → {tool:"Bash", input:{command,cwd?}}
+ *                        （command 与 args 数组 join 成完整命令行）
+ *   fs/write_text_file   {sessionId, path, content}        → {tool:"Write", input:{file_path,content}}
+ * 其余方法不在网关把守范围，代理直接直通（不调本函数）。
+ * 参数非法一律 NormalizeError → 上层 fail-closed 回 JSON-RPC error -32000。
+ */
+export function normalizeAcpRequest(method: string, params: unknown): ToolCall {
+  const p = isRecord(params) ? params : fail(`ACP ${method} 的 params 必须是对象`);
+  const sessionId = asString(p.sessionId);
+  const cwd = asString(p.cwd);
+
+  if (method === "terminal/create") {
+    const command = requireString(p.command, "terminal/create 的 command");
+    const args = p.args === undefined ? [] : p.args;
+    if (!Array.isArray(args) || args.some((a) => typeof a !== "string")) {
+      fail("terminal/create 的 args 必须是字符串数组");
+    }
+    const full = [command, ...(args as string[])].join(" ");
+    return {
+      request_id: randomUUID(),
+      agent_id: "acp",
+      ...(sessionId !== undefined ? { session_id: sessionId } : {}),
+      tool: { name: "Bash", action: "execute", category: "shell" },
+      input: { command: full, ...(cwd !== undefined ? { cwd } : {}) },
+      ...(cwd !== undefined ? { context: { cwd } } : {}),
+    };
+  }
+  if (method === "fs/write_text_file") {
+    const filePath = requireString(p.path, "fs/write_text_file 的 path");
+    if (typeof p.content !== "string") fail("fs/write_text_file 的 content 必须是字符串");
+    return {
+      request_id: randomUUID(),
+      agent_id: "acp",
+      ...(sessionId !== undefined ? { session_id: sessionId } : {}),
+      tool: { name: "Write", action: "write", category: "filesystem" },
+      input: { file_path: filePath, content: p.content },
+    };
+  }
+  fail(`ACP 方法 ${method} 不在把守范围（ACP_GUARDED_METHODS），不应送归一化`);
 }

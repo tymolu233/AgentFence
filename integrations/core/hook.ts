@@ -15,11 +15,11 @@ import { createHookEngine } from "./engine.js";
 import { NormalizeError, OutOfScopeEvent, normalizePayload } from "./normalize.js";
 import { isRecord, parseHookPayload, readStdin } from "./payload.js";
 import { allowThroughResponse, denyResponse, toHostResponse } from "./respond.js";
-import type { HostDialect, HostResponse, NormalizedHook } from "./types.js";
+import type { HostResponse, NormalizedHook, StdioDialect } from "./types.js";
 
 export interface EvaluateHookOptions {
   /** 入口按安装点位钉死方言；缺省则自动识别 */
-  dialect?: HostDialect;
+  dialect?: StdioDialect;
 }
 
 function errorMessage(error: unknown): string {
@@ -38,8 +38,8 @@ export async function evaluateHook(
   if (dialect === undefined) {
     return denyResponse(undefined, "无法识别宿主方言（hook_event_name 与特征字段均不匹配）");
   }
-  if (dialect === "opencode") {
-    return denyResponse(undefined, "opencode 是进程内插件，不走 stdin hook");
+  if (dialect === "opencode" || dialect === "pi" || dialect === "acp") {
+    return denyResponse(undefined, `${dialect} 不是 stdin hook 方言，请走对应适配器入口`);
   }
 
   let normalized: NormalizedHook;
@@ -69,7 +69,7 @@ export async function evaluateHook(
  * 引擎装配失败时无法走正常流程，直接在钉死的方言里回 DENY。
  */
 export async function runHookEntry(
-  dialect: Exclude<HostDialect, "opencode">,
+  dialect: StdioDialect,
   configPath?: string,
 ): Promise<void> {
   const raw = await readStdin();
@@ -96,5 +96,9 @@ export async function runHookEntry(
   }
   const final = result ?? denyResponse(dialect, "网关内部错误：响应未生成");
   process.stdout.write(final.stdout + "\n");
+  if (final.stderr !== undefined) {
+    // grok-cli 契约：阻断原因经 stderr 送达 agent（[Hook blocked] <stderr>）
+    process.stderr.write(final.stderr + "\n");
+  }
   process.exitCode = final.exitCode;
 }

@@ -22,7 +22,7 @@ afterAll(async () => {
 });
 
 describe("detectDialect 方言识别", () => {
-  it("五家特征 payload 各归各家", () => {
+  it("各家特征 payload 各归各家", () => {
     expect(
       detectDialect({ hook_event_name: "PreToolUse", tool_name: "Bash", tool_input: {} }),
     ).toBe("claude-code");
@@ -35,6 +35,15 @@ describe("detectDialect 方言识别", () => {
         model: "gpt",
       }),
     ).toBe("codex");
+    // Copilot：ISO timestamp 且无 turn_id（jev-guard detectAgent 同款顺序）
+    expect(
+      detectDialect({
+        hook_event_name: "PreToolUse",
+        tool_name: "bash",
+        tool_input: {},
+        timestamp: "2026-09-23T08:15:30.123Z",
+      }),
+    ).toBe("copilot");
     expect(detectDialect({ hook_event_name: "BeforeTool", tool_name: "x" })).toBe("gemini-cli");
     expect(detectDialect({ hook_event_name: "beforeShellExecution", command: "ls" })).toBe(
       "cursor",
