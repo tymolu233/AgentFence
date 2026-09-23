@@ -9,8 +9,12 @@
  * - Cursor 用 camelCase 事件，且可靠字段区分（beforeShellExecution 只有
  *   command+cwd；beforeMCPExecution 带 mcp_server_name；preToolUse 的
  *   tool_input 是字符串而非对象）。
- * - grok-cli 的 PreToolUse 与 Claude Code 完全同形（无特征可区分），
- *   只能靠入口钉方言（integrations/grok-cli/index.ts）。
+ * - grok-build（xAI 官方 Rust 版）双写事件键：camelCase `hookEventName`
+ *   带 snake_case 值（"pre_tool_use"）+ snake_case `hook_event_name` 带
+ *   PascalCase 值（"PreToolUse"），字段为 camelCase（toolName/toolInput/
+ *   sessionId）并附 snake_case 别名（xai-grok-hooks/src/event.rs
+ *   HookEventEnvelope::to_hook_json）。它同时带 timestamp，若按 Claude 形
+ *   分支走会被误判为 copilot —— 故 camelCase `hookEventName` 特征最先判。
  *
  * 各宿主入口（integrations/<host>/index.ts）按安装点位钉死方言，
  * 本函数是通用入口 / 误装兜底；识别不出返回 undefined（上层 fail-closed）。
@@ -22,6 +26,12 @@ const GEMINI_EVENTS = new Set(["BeforeTool", "AfterTool", "BeforeAgent"]);
 const CURSOR_EVENTS = new Set(["beforeShellExecution", "beforeMCPExecution", "preToolUse"]);
 
 export function detectDialect(payload: Record<string, unknown>): HostDialect | undefined {
+  // grok-build 独有特征：camelCase hookEventName 键（其余宿主只有 snake_case
+  // hook_event_name 或自家事件名）。必须先于 PreToolUse 分支判断 —— grok-build
+  // 双写 hook_event_name: "PreToolUse" 且带 timestamp，落进 Claude 形分支会被
+  // 误判为 copilot。
+  if (asString(payload.hookEventName) !== undefined) return "grok-build";
+
   const event = asString(payload.hook_event_name);
 
   if (event === "PreToolUse") {

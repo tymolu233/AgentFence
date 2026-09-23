@@ -14,7 +14,9 @@
  * 名字表按各宿主文档的内置工具命名收录（小写比较）：
  * Claude Code(Bash/Read/Write/Edit/NotebookEdit)、Codex(shell/apply_patch)、
  * Gemini CLI(run_shell_command/read_file/write_file/replace)、
- * OpenCode(bash/read/edit/write)、Cursor(Write/Edit 等，经 preToolUse)。
+ * OpenCode(bash/read/edit/write)、Cursor(Write/Edit 等，经 preToolUse)、
+ * grok-build(run_terminal_command/write/search_replace/hashline_edit/
+ * read_file/hashline_read，见 xai-grok-tools/src/types/claude_alias.rs)。
  */
 import type { ToolRef } from "../../src/api/types.js";
 
@@ -22,6 +24,7 @@ const SHELL_TOOLS = new Set([
   "bash",
   "shell",
   "run_shell_command",
+  "run_terminal_command",
   "terminal",
   "console",
   "local_shell",
@@ -35,11 +38,13 @@ const FS_WRITE_TOOLS = new Set([
   "apply_patch",
   "write_file",
   "replace",
+  "search_replace",
+  "hashline_edit",
   "str_replace_editor",
   "str_replace_based_edit_tool",
 ]);
 
-const FS_READ_TOOLS = new Set(["read", "read_file", "view"]);
+const FS_READ_TOOLS = new Set(["read", "read_file", "hashline_read", "view"]);
 
 export function toToolRef(hostToolName: string): ToolRef {
   const key = hostToolName.toLowerCase();

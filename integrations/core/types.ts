@@ -15,7 +15,7 @@ export type HostDialect =
   | "copilot"
   | "pi"
   | "acp"
-  | "grok-cli";
+  | "grok-build";
 
 /**
  * stdin/stdout 命令 hook 形态的方言子集（runHookEntry 的合法入参）。
@@ -36,15 +36,16 @@ export interface NormalizedHook {
 
 /**
  * 宿主响应：写 stdout 的 JSON 文本 + 进程退出码。
- * 除 grok-cli 外一律 exit 0 用 JSON 表达判定（现代 hook 契约）；
+ * 除 grok-build 的 DENY 外一律 exit 0 用 JSON 表达判定（现代 hook 契约）；
  * 非 0 只留给进程级崩溃（宿主按自身语义处理非零退出）。
- * grok-cli 例外：其 hook 契约以 exit 2 表阻断、stderr 文本才会被
- * 宿主拼给 agent（superagent-ai/grok-cli src/hooks/executor.ts:5,64-77 与
- * src/grok/tools.ts:108-111），故 stderr 字段专为它保留。
+ * grok-build 例外：其 hook 契约里 exit 2 = 显式阻断（宿主 fail-open，
+ * 唯一不依赖 stdout JSON 的阻断信号），故 DENY 走 exit 2 + stderr +
+ * stdout JSON 三写双保险（xai-org/grok-build xai-grok-hooks/src/runner/
+ * command.rs parse_blocking_result），stderr 字段专为它保留。
  */
 export interface HostResponse {
   stdout: string;
   exitCode: number;
-  /** grok-cli 阻断原因经 stderr 送达 agent；其余宿主不设 */
+  /** grok-build 阻断原因经 stderr 兜底（stdout JSON 损坏时仍阻断）；其余宿主不设 */
   stderr?: string;
 }

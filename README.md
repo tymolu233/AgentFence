@@ -49,7 +49,7 @@ node dist/src/cli/index.js exec -- <command>
 | Copilot CLI | PreToolUse hook（原生 ask） | [integrations/copilot](integrations/copilot/README.md) |
 | pi | 进程内扩展（无 UI 时 REVIEW 降级 block） | [integrations/pi](integrations/pi/README.md) |
 | ACP 宿主（Zed 等） | JSON-RPC stdio 代理（原生 ask） | [integrations/acp](integrations/acp/README.md) |
-| Grok CLI（社区延续版） | PreToolUse hook（REVIEW 降级 block） | [integrations/grok-cli](integrations/grok-cli/README.md) |
+| Grok Build（xAI 官方 Rust 版） | PreToolUse hook（原生 ask，覆盖全部工具与 MCP） | [integrations/grok-build](integrations/grok-build/README.md) |
 
 任意其他框架可直接调判定 API（见 `src/api/types.ts` 的 `ToolCall` / `Decision` 契约）。
 

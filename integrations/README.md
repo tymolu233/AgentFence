@@ -4,7 +4,7 @@
 适配器只做协议转换：宿主 payload → 统一 `ToolCall` → `engine.check` →
 把 `Decision` 回译为宿主响应；判定逻辑只在核心（`docs/architecture.md`
 "Agent 适配"）。方言依据：`docs/research/jev-guard.md`（Copilot / pi /
-ACP 直接参照 jev-guard 源码，Grok CLI 调研见 `grok-cli/README.md`）。
+ACP 直接参照 jev-guard 源码，Grok Build 调研见 `grok-build/README.md`）。
 
 ## 结构
 
@@ -18,7 +18,7 @@ opencode/      进程内插件（tool.execute.before + permission.ask）
 copilot/       PreToolUse hook（同 Claude 形，多 ISO timestamp；顶层双写）
 pi/            进程内扩展（tool_call 事件 + ctx.ui.confirm 审批）
 acp/           JSON-RPC stdio 代理（terminal/create + fs/write_text_file）
-grok-cli/      PreToolUse hook（superagent-ai/grok-cli；approve/block 两档）
+grok-build/    PreToolUse hook（xai-org/grok-build 官方 Rust 版；三档齐全）
 ```
 
 ## 构建与安装
@@ -50,18 +50,22 @@ ask（人工审批）不是每家宿主都支持，无 ask 能力的点位按家
 | pi `tool_call`（有 UI） | 放行 | `ctx.ui.confirm` 弹审批（拒绝即 block） | `{block, reason}` |
 | pi `tool_call`（无 UI） | 放行 | **block**（降级，fail-closed） | `{block, reason}` |
 | ACP `terminal/create` / `fs/write_text_file` | 转发客户端 | `session/request_permission` 向客户端要批准（拒绝回 error -32000） | error -32000 |
-| Grok CLI `PreToolUse` | `decision: approve` | **block**（降级，fail-closed；exit 2 + stderr） | block（exit 2 + stderr） |
+| Grok Build `PreToolUse` | `decision: allow` | `decision: ask`（原生，进宿主权限提示） | `decision: deny`（exit 2 + stderr 双保险） |
 
 ## 不变量落实
 
 - **fail-closed**：payload 非法 / 方言不可识别 / 归一化失败 / 引擎装配失败
   一律回宿主形状的 DENY（`core/hook.ts`；ACP 回 JSON-RPC error -32000，
-  pi/opencode throw 或 block，grok-cli exit 2）。
+  pi/opencode throw 或 block，grok-build exit 2 + stderr）。
 - **直通例外**：非执行前事件（PostToolUse / AfterTool / SessionStart 等）
   不送判定，直接放行 —— 网关只把守执行前点位。ACP 代理同样只拦
   `terminal/create` / `fs/write_text_file`，其余消息双向直通。
 - **审计**：每次判定（含 ALLOW）经引擎写入 `<cwd>/.agentfence/audit.jsonl`。
 - **agent_message ≠ 用户发言**：Cursor preToolUse 的 agent_message 不进
   `session.user_intent`（不变量 4 精神）。
-- **覆盖边界**：Grok CLI 当前版本的 hook 只接 `bash` 工具；ACP 代理只看
-  得到流经客户端的调用（agent 内部工具不过代理）。详见各家 README。
+- **宿主失败语义**：grok-build 的 hook 失败（超时/崩溃/输出非法）一律
+  fail-open，故其 DENY 走 exit 2 + stderr + stdout JSON 三写 —— exit 2
+  是唯一不依赖 stdout JSON 的阻断通道。
+- **覆盖边界**：Grok Build 的 PreToolUse 覆盖全部内置工具与 MCP
+  （`server__tool` 限定名）；ACP 代理只看得到流经客户端的调用（agent
+  内部工具不过代理）。详见各家 README。

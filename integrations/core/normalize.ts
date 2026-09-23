@@ -59,15 +59,13 @@ function baseCall(
 }
 
 /**
- * Claude Code / Codex / Copilot / grok-cli：PascalCase 事件 + tool_name +
+ * Claude Code / Codex / Copilot：PascalCase 事件 + tool_name +
  * tool_input 对象。Copilot 多一个 ISO timestamp 字段（归一化忽略，只做
- * 方言识别特征）；grok-cli 的 PreToolUse 形状与 Claude Code 完全同形
- * （superagent-ai/grok-cli src/hooks/types.ts PreToolUseHookInput），
- * 只能靠安装点位钉方言区分。
+ * 方言识别特征）。
  */
 function normalizeClaudeStyle(
   payload: Record<string, unknown>,
-  dialect: "claude-code" | "codex" | "copilot" | "grok-cli",
+  dialect: "claude-code" | "codex" | "copilot",
 ): NormalizedHook {
   const event = asString(payload.hook_event_name) ?? "PreToolUse";
   if (event !== "PreToolUse") {
@@ -76,6 +74,49 @@ function normalizeClaudeStyle(
   const toolName = requireString(payload.tool_name, "tool_name");
   const input = asToolInput(payload.tool_input, "tool_input");
   return { dialect, event, call: baseCall(dialect, payload, toolName, input) };
+}
+
+/**
+ * grok-build（xAI 官方 Rust 版）：camelCase 字段 + snake_case 别名双写
+ * （xai-grok-hooks/src/event.rs HookEventEnvelope::to_hook_json）：
+ *   { hookEventName: "pre_tool_use", hook_event_name: "PreToolUse",
+ *     sessionId / session_id, cwd, workspaceRoot, permissionMode, promptId,
+ *     toolName / tool_name, toolInput / tool_input, toolUseId,
+ *     toolInputTruncated, timestamp }
+ * 事件名两种拼写都接受（PreToolUse / pre_tool_use）；其余事件 OutOfScope。
+ * MCP 调用以限定名 server__tool 出现（use_tool 分发器不解包），
+ * 含 `__` 的工具名归类 category "mcp"（内置工具名均无 `__`）。
+ * promptId 是 per-turn 标识，进 run_id；toolUseId 是单次调用标识，
+ * 与 request_id（网关自产 UUID）语义重叠，不采。
+ */
+function normalizeGrokBuild(payload: Record<string, unknown>): NormalizedHook {
+  const pascal = asString(payload.hook_event_name);
+  const snake = asString(payload.hookEventName);
+  const event = pascal ?? snake ?? "PreToolUse";
+  if (event !== "PreToolUse" && event !== "pre_tool_use") {
+    throw new OutOfScopeEvent(`事件 ${event} 不是执行前点位，不送判定`);
+  }
+  const toolName = requireString(payload.toolName ?? payload.tool_name, "toolName");
+  const input = asToolInput(payload.toolInput ?? payload.tool_input, "toolInput");
+  const tool = toolName.includes("__")
+    ? { name: toolName, action: "execute", category: "mcp" }
+    : toToolRef(toolName);
+  const cwd = asString(payload.cwd);
+  const sessionId = asString(payload.sessionId ?? payload.session_id);
+  const promptId = asString(payload.promptId);
+  return {
+    dialect: "grok-build",
+    event: "PreToolUse",
+    call: {
+      request_id: randomUUID(),
+      agent_id: "grok-build",
+      ...(sessionId !== undefined ? { session_id: sessionId } : {}),
+      ...(promptId !== undefined ? { run_id: promptId } : {}),
+      tool,
+      input,
+      ...(cwd !== undefined ? { context: { cwd } } : {}),
+    },
+  };
 }
 
 /** Gemini CLI：BeforeTool 事件，字段同为 tool_name / tool_input */
@@ -171,8 +212,9 @@ export function normalizePayload(
     case "claude-code":
     case "codex":
     case "copilot":
-    case "grok-cli":
       return normalizeClaudeStyle(payload, dialect);
+    case "grok-build":
+      return normalizeGrokBuild(payload);
     case "gemini-cli":
       return normalizeGemini(payload);
     case "cursor":

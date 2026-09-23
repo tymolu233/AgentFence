@@ -20,7 +20,7 @@
  * | pi tool_call（有 UI）        | 有  | ask（适配器驱动 ctx.ui.confirm）   |
  * | pi tool_call（无 UI）        | 无  | 阻断（block，fail-closed）         |
  * | acp terminal/create 等       | 有  | ask（session/request_permission）  |
- * | grok-cli PreToolUse          | 无  | 阻断（exit 2 + stderr，fail-closed）|
+ * | grok-build PreToolUse        | 有  | ask（原生 decision: "ask"）        |
  *
  * 降级取舍的理由：
  * - Codex / Gemini / Cursor preToolUse 选"警告放行"：沿用 jev-guard 在这些
@@ -30,9 +30,9 @@
  *   且 OpenCode 对危险工具自带权限提示，permission.ask 钩子在那里提供原生
  *   ask； REVIEW 在 before 里阻断与 pi "无 UI 时 ask 直接 block" 同族，
  *   符合 AgentFence fail-closed 姿态（不变量 5）。
- * - grok-cli 选"阻断"：hook 输出只有 approve/block 两档，且 additionalContext
- *   / reason 字段在当前版本无人消费（警告无处可达），REVIEW 静默放行无任何
- *   用户可见性 —— 不如 block（stderr 原因会送达 agent 转告用户）。
+ * - grok-build 无降级：PreToolUse 契约三档齐全（allow/ask/deny，见
+ *   xai-grok-hooks/src/runner/mod.rs DecisionToken），ask 会把调用送进
+ *   宿主权限提示并展示 reason，REVIEW 原生映射。
  */
 import type { Decision } from "../../src/api/types.js";
 import type { CursorEvent, HostDialect } from "./types.js";
@@ -88,10 +88,9 @@ const MATRIX: Record<HostDialect, HostCapability & Partial<Record<CursorEvent, H
     ...WITH_ASK,
     note: "ACP 客户端支持 session/request_permission，REVIEW 由代理向客户端发起审批",
   },
-  "grok-cli": {
-    ask: false,
-    review: "block",
-    note: "grok-cli hook 只有 approve/block 两档且无警告通道（additionalContext 无人消费），REVIEW 按 fail-closed 降级为 block（exit 2 + stderr）",
+  "grok-build": {
+    ...WITH_ASK,
+    note: "grok-build 的 PreToolUse 契约三档齐全（allow/ask/deny），ask 进宿主权限提示并展示 reason",
   },
 };
 

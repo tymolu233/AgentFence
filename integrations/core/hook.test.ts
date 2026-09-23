@@ -44,6 +44,17 @@ describe("detectDialect 方言识别", () => {
         timestamp: "2026-09-23T08:15:30.123Z",
       }),
     ).toBe("copilot");
+    // grok-build：camelCase hookEventName 键是独有特征；它同时带 timestamp，
+    // 须先于 Claude 形分支识别，否则误判 copilot
+    expect(
+      detectDialect({
+        hookEventName: "pre_tool_use",
+        hook_event_name: "PreToolUse",
+        toolName: "run_terminal_command",
+        toolInput: { command: "ls" },
+        timestamp: "2026-09-23T08:15:30.123Z",
+      }),
+    ).toBe("grok-build");
     expect(detectDialect({ hook_event_name: "BeforeTool", tool_name: "x" })).toBe("gemini-cli");
     expect(detectDialect({ hook_event_name: "beforeShellExecution", command: "ls" })).toBe(
       "cursor",

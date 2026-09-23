@@ -11,8 +11,11 @@
  *   无 ask —— REVIEW 降级为 allow + systemMessage 警告
  * - cursor：{ permission: allow|ask|deny, user_message?, agent_message? }；
  *   preToolUse 无 ask —— REVIEW 降级为 allow + user_message 警告
- * - grok-cli：{ decision: approve|block, reason? }；无 ask 且警告字段无人
- *   消费 —— REVIEW 降级为 block（exit 2 + stderr 原因）
+ * - grok-build：{ decision: allow|ask|deny, reason? }，三档齐全原生 ask
+ *   （xai-grok-hooks/src/runner/mod.rs DecisionToken）。DENY 走 exit 2 +
+ *   stderr + stdout JSON 三写：宿主 hook 失败 fail-open，exit 2 是唯一
+ *   不依赖 stdout JSON 的阻断信号（parse_blocking_result：JSON deny 任意
+ *   退出码都生效；stdout 损坏时 exit 2 + stderr 首行仍阻断）
  * - opencode / pi 是进程内插件、acp 是 JSON-RPC 代理，不走 stdout，
  *   其回译在各自适配器目录
  *
@@ -62,19 +65,27 @@ function geminiResponse(decision: Decision): HostResponse {
 }
 
 /**
- * grok-cli：hook 输出 { decision: "approve"|"block", reason? }；exit 2 =
- * 阻断，且只有 stderr 文本会被宿主拼给 agent（src/grok/tools.ts:108-111
- * 的 [Hook blocked] <stderr>）。无 ask、警告字段无人消费，REVIEW 已按
- * 能力矩阵降级 block。
+ * grok-build：hook 输出 { decision: allow|ask|deny, reason? }（顶层 decision
+ * 与 hookSpecificOutput.permissionDecision 等价，用顶层）。三档齐全，
+ * REVIEW 原生映射 ask（进宿主权限提示，reason 展示给用户）。
+ * allow/ask 必须 exit 0 —— exit 2 会把 stdout 的 allow/ask 压成 deny
+ * （parse_blocking_result "stdout is ignored on exit 2"）。
+ * deny 走 exit 2 + stderr + JSON 三写：宿主对 hook 失败一律 fail-open，
+ * exit 2 是唯一不依赖 stdout JSON 的阻断通道，stderr 首行在 JSON 损坏时
+ * 兜底为阻断原因。
  */
-function grokResponse(decision: Decision): HostResponse {
-  const t = translateDecision(decision, capabilityFor("grok-cli"));
+function grokBuildResponse(decision: Decision): HostResponse {
+  const t = translateDecision(decision, capabilityFor("grok-build"));
+  const summary = summarizeDecision(decision);
   if (t.kind === "allow") {
-    return respond({ decision: "approve", reason: summarizeDecision(decision) });
+    return respond({ decision: "allow", reason: summary });
   }
-  const message = t.warning ?? `AgentFence DENY：${summarizeDecision(decision)}（调用未执行）`;
+  if (t.kind === "ask") {
+    return respond({ decision: "ask", reason: `AgentFence 人工审批：${summary}` });
+  }
+  const message = t.warning ?? `AgentFence DENY：${summary}（调用未执行）`;
   return {
-    stdout: JSON.stringify({ decision: "block", reason: message }),
+    stdout: JSON.stringify({ decision: "deny", reason: message }),
     exitCode: 2,
     stderr: message,
   };
@@ -108,8 +119,8 @@ export function toHostResponse(
       return geminiResponse(decision);
     case "cursor":
       return cursorResponse(decision, event);
-    case "grok-cli":
-      return grokResponse(decision);
+    case "grok-build":
+      return grokBuildResponse(decision);
   }
 }
 
@@ -143,10 +154,11 @@ export function denyResponse(dialect: HostDialect | undefined, reason: string): 
       return respond({ decision: "deny", reason: message });
     case "cursor":
       return respond({ permission: "deny", user_message: message, agent_message: message });
-    case "grok-cli":
-      // exit 2 是 grok hook 契约的阻断信号；stderr 才会被拼给 agent
+    case "grok-build":
+      // exit 2 是 grok-build hook 契约里唯一不依赖 stdout JSON 的阻断信号；
+      // stderr 首行在 JSON 损坏时兜底为阻断原因
       return {
-        stdout: JSON.stringify({ decision: "block", reason: message }),
+        stdout: JSON.stringify({ decision: "deny", reason: message }),
         exitCode: 2,
         stderr: message,
       };
@@ -187,8 +199,8 @@ export function allowThroughResponse(
       return respond({ decision: "allow", reason });
     case "cursor":
       return respond({ permission: "allow" });
-    case "grok-cli":
-      return respond({ decision: "approve", reason });
+    case "grok-build":
+      return respond({ decision: "allow", reason });
     case "opencode":
     case "pi":
     case "acp":

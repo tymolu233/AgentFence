@@ -97,7 +97,8 @@ export async function runHookEntry(
   const final = result ?? denyResponse(dialect, "网关内部错误：响应未生成");
   process.stdout.write(final.stdout + "\n");
   if (final.stderr !== undefined) {
-    // grok-cli 契约：阻断原因经 stderr 送达 agent（[Hook blocked] <stderr>）
+    // grok-build 契约：DENY 走 exit 2 + stderr 兜底（stdout JSON 损坏时
+    // stderr 首行仍被宿主当作阻断原因）
     process.stderr.write(final.stderr + "\n");
   }
   process.exitCode = final.exitCode;
