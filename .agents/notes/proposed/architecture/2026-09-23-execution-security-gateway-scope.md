@@ -8,7 +8,7 @@ AI Agent 调用 Shell、文件系统、数据库、HTTP、MCP Tool 时，模型�
 
 ## Proposal
 
-AgentFence 定位为 Agent Execution Security Gateway：不判断 Agent 的意图，只判断 Tool Call 是否允许执行。决策为三态 ALLOW / REVIEW / DENY 并附 risk 与 confidence；无法判断时 FAIL CLOSED。检查管线为六层：Hard Rules → Command Parser（AST 级解析，禁裸字符串匹配）→ Tool/Skill ACL → Policy Engine（OPA/Rego）→ AI Risk Judge → Sandbox。AI Judge 只输出风险评估，不直接控制执行，最终决策由 Policy 汇总。所有调用（含 ALLOW）写审计日志。
+AgentFence 定位为 Agent Execution Security Gateway：不判断 Agent 的意图，只判断 Tool Call 是否允许执行。决策为三态 ALLOW / REVIEW / DENY 并附 risk 与 confidence；无法判断时 FAIL CLOSED。检查管线按成本升序：Tool/Skill ACL → Command Parser（AST 级解析，先解析再匹配防绕过）→ Hard Rules → Policy Engine（OPA/Rego）→ AI Risk Judge → Approval → Audit；ALLOW 后由 Sandbox 兜底。AI Judge 只输出风险评估，不直接控制执行，最终决策由 Policy 汇总。所有调用（含 ALLOW）写审计日志。分层思路的来源项目与学习计划见 `docs/references.md`。
 
 ## Alternatives considered
 

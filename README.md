@@ -9,17 +9,17 @@ AgentFence 不判断"Agent 想完成什么"，只判断：**这个 Tool Call 是
 - 全量审计：ALLOW 与 DENY 都记录
 - 形态：Go 核心 + CLI + HTTP API + Python SDK
 
-详见 `docs/architecture.md`（架构地图，权威）；原始思路稿存档于 `docs/vision.md`。
+详见 `docs/architecture.md`（架构地图，权威）；原始思路稿存档于 `docs/vision.md`；参考项目学习路线见 `docs/references.md`。
 
 ## 演进路线
 
 | 版本 | 内容 |
 |---|---|
-| v0.1 | Rule Engine 直通 ALLOW/DENY（Shell / Filesystem / HTTP） |
-| v0.2 | Command Parser、Policy、Audit |
-| v0.3 | Jev、Risk Score、REVIEW、Human Approval |
-| v0.4 | MCP Gateway、OpenCode 集成、Skill Permission |
-| v0.5 | Docker Sandbox、网络隔离、Pentest 规则 |
+| v0.1 | 四模块闭环：rule-engine / policy-engine / jev-judge（接口先行，默认关闭）/ gateway；首个接入 OpenCode，全量审计 |
+| v0.2 | MCP Gateway 接入 |
+| v0.3 | Pentest Policy、Target Authorization |
+| v0.4 | Docker Sandbox、网络隔离 |
+| v0.5 | Skill Scanner、审计增强 |
 
 ## 开发规范
 

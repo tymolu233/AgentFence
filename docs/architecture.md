@@ -23,16 +23,19 @@ AgentFence 是 AI Agent 的执行安全网关（Agent Execution Security Gateway
 }
 ```
 
-## 六层安全模型
+## 检查管线
 
-Tool Call 依次穿过六层，任一前置层给出确定结论即短路：
+Tool Call 依次穿过七层检查：便宜的确定性检查在前、贵的在后，任一前置层给出确定结论即短路。设计取舍见 `.agents/notes/proposed/architecture/`，分层思路的来源项目见 `docs/references.md`。
 
-1. **Hard Rules** — 确定性规则（危险命令 / 路径 / 参数 / API / Tool）。不调 LLM。规则不写死，按类目存于 `rules/*.yaml`（filesystem、database、network、credentials、shell、cloud、kubernetes、git、pentest），支持社区贡献。规则形如 `id / category / severity / match / action`。
-2. **Command Parser** — 禁止裸字符串匹配。Raw input 经 Shell Parser 解析为 AST（executable / args / pipe / redirect / environment），输出结构化风险画像：`filesystem.{read,write,delete}`、`network`、`privilege`。
-3. **Tool / Skill ACL** — 按 Agent 收口可调用的工具集与权限（如 research agent `shell.allowed: false` → 直接 DENY）。Skill 带 Manifest 声明权限，Skill 内部越权调用同样被 ACL 拦截。
+1. **Tool / Skill ACL** — 按 Agent 收口可调用工具集与权限（如 research agent `shell.allowed: false` → 直接 DENY）。只看 tool 名与 manifest，不解析输入，成本最低，放最前。Skill 带 Manifest 声明权限，Skill 内部越权调用同样被 ACL 拦截。
+2. **Command Parser** — Raw input 经 Shell Parser 解析为 AST（executable / args / pipe / redirect / environment），输出结构化风险画像：`filesystem.{read,write,delete}`、`network`、`privilege`。必须先解析再匹配，否则规则被字符串混淆绕过；禁止裸字符串匹配。
+3. **Hard Rules** — 在解析结果上跑确定性规则（危险命令 / 路径 / 参数 / API / Tool），不调 LLM。规则不写死，按类目存于 `rules/*.yaml`（filesystem、database、network、credentials、shell、cloud、kubernetes、git、pentest），支持社区贡献。规则形如 `id / category / severity / match / action`。
 4. **Policy Engine** — OPA/Rego；Agent × Target × Tool × Action × Environment × Risk 联合判定。同一动作在 sandbox 与 production 下结论不同。
 5. **AI Risk Judge (Jev)** — 只判断复杂上下文中的风险，输出 risk / decision / confidence / reason；**不直接控制执行**，其输出回到 Policy 汇总出最终决策。
-6. **Sandbox** — 最后一道防线。即使前五层全判错，Docker / VM / namespace / 只读 FS / 资源限额 / 网络 ACL 限制实际破坏范围。
+6. **Approval Engine** — REVIEW 的人工审批通道。
+7. **Audit** — 全量记录，见"审计"一节。
+
+ALLOW 之后由 **Sandbox** 兜底：即使前五层判错，Docker / VM / namespace / 只读 FS / 资源限额 / 网络 ACL 仍限制实际破坏范围。
 
 ## 关键数据结构
 
@@ -74,10 +77,10 @@ examples/  tests/  docs/
 
 ## 演进路线
 
-- v0.1 Rule Engine 直通 ALLOW/DENY，覆盖 Shell / Filesystem / HTTP
-- v0.2 Command Parser、Policy、Audit
-- v0.3 Jev、Risk Score、REVIEW、Human Approval
-- v0.4 MCP Gateway、OpenCode 集成、Skill Permission
-- v0.5 Docker Sandbox、网络隔离、Pentest 规则
+- v0.1 四个模块最小闭环：`internal/rules`（Vigil 思路）、`internal/policy`（DeepintShield 思路）、`internal/judge`（jev-guard 思路，接口先行、默认关闭）、`internal/engine` gateway 编排（Guardian/AgentGuard 思路）；首个接入 OpenCode，产出 ALLOW / REVIEW / DENY。审计自 v0.1 起全量记录。不做 Dashboard、Cloud、大量框架适配、ML/自训模型。
+- v0.2 MCP Gateway 接入
+- v0.3 Pentest Policy 与 Target Authorization
+- v0.4 Docker Sandbox 与网络隔离
+- v0.5 Skill Scanner、审计增强（防篡改链）
 
 > Pentest 是目标场景但不做一刀切拦截：Recon / Scanner 允许，Exploit 走 Sandbox/Review，Credential Access 走 Review，Destructive 拒绝。分层理由见 `.agents/notes/proposed/architecture/`。
