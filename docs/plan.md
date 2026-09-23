@@ -37,7 +37,7 @@
 
 | ID | 任务 | 产出 | 状态 |
 |---|---|---|---|
-| C1 | Pentest Policy 与 Target Authorization（差异化能力，原 v0.3 提前） | `rules/pentest.yaml`、`policies/` | 待办 |
+| C1 | Pentest Policy 与 Target Authorization（差异化能力，原 v0.3 提前） | `rules/pentest.yaml`、`policies/`、`examples/pentest.agentfence.yaml` | 进行中（agent） |
 | C2 | Generic SDK 接入示例（LangChain 等任意框架，Tier 3） | `examples/` | 待办 |
 | C3 | 二线宿主补充适配：Copilot CLI / ACP 代理 / pi（方言见 A1 报告） | `integrations/{copilot,acp,pi}` | 待办 |
 | C4 | MCP 拦截（**按需触发**，见下） | `integrations/mcp` | 暂缓 |
