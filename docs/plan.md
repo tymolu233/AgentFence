@@ -8,27 +8,29 @@
 
 | ID | 任务 | 时间盒 | 产出 | 状态 |
 |---|---|---|---|---|
-| A1 | 深读 [leepokai/jev-guard](https://github.com/leepokai/jev-guard)（`src/ hooks/ extensions/`）；**额外关注它如何同时适配 8 个 agent（hook 形态与分发方式）** | 1–2 天 | `docs/research/jev-guard.md` | 进行中（agent） |
-| A2 | 深读 [hexitlabs/vigil](https://github.com/hexitlabs/vigil)（`checkAction` 与规则表） | 1–2 天 | `docs/research/vigil.md` | 进行中（agent） |
-| A3 | 深读 [Deepint-Shield/ai-security](https://github.com/Deepint-Shield/ai-security)（Gateway/PDP 边界、`/decide`） | 1–2 天 | `docs/research/deepintshield.md` | 进行中（agent） |
-| A4 | 速读 [LegionForge/guardian](https://github.com/LegionForge/guardian)（7 个确定性检查、Task token ACL、Tool Registry） | 半天 | `docs/research/guardian.md` | 待办 |
-| A5 | 速读 [WhitzardAgent/AgentGuard](https://github.com/WhitzardAgent/AgentGuard)（GPL-3.0，只看思路）+ [hidearmoon/agentguard](https://github.com/hidearmoon/agentguard)；**额外关注各自适配了哪些 agent 框架、如何挂接** | 半天 | `docs/research/agentguard.md` | 待办 |
-| A6 | 提取 [roboticforce/agent-guardrails](https://github.com/roboticforce/agent-guardrails) 规则库：DENY/REVIEW 清单与易绕过模式 | 半天 | `docs/research/agent-guardrails.md` + 规则候选清单 | 待办 |
-| A7 | 综合拍板：Tool Call 数据结构 v1 + 规则格式 v1 + **核心语言选型**（按 `.agents/notes/proposed/architecture/2026-09-23-language-selection-by-agent-ecosystem.md` 三条标准） | 1 天 | `.agents/notes/` | 待办，依赖 A1–A3 |
+| A1 | 深读 [leepokai/jev-guard](https://github.com/leepokai/jev-guard)（`src/ hooks/ extensions/`） | 1–2 天 | `docs/research/jev-guard.md` | 完成 |
+| A2 | 深读 [hexitlabs/vigil](https://github.com/hexitlabs/vigil)（`checkAction` 与规则表） | 1–2 天 | `docs/research/vigil.md` | 完成 |
+| A3 | 深读 [Deepint-Shield/ai-security](https://github.com/Deepint-Shield/ai-security)（Gateway/PDP 边界、`/decide`） | 1–2 天 | `docs/research/deepintshield.md` | 完成 |
+| A4 | 速读 [LegionForge/guardian](https://github.com/LegionForge/guardian)（7 个确定性检查、Task token ACL、Tool Registry） | 半天 | `docs/research/guardian.md` | 完成 |
+| A5 | 速读 [WhitzardAgent/AgentGuard](https://github.com/WhitzardAgent/AgentGuard)（GPL-3.0，只看思路）+ [hidearmoon/agentguard](https://github.com/hidearmoon/agentguard) | 半天 | `docs/research/agentguard.md` | 完成 |
+| A6 | 提取 [roboticforce/agent-guardrails](https://github.com/roboticforce/agent-guardrails) 规则库：DENY/REVIEW 清单与易绕过模式 | 半天 | `docs/research/agent-guardrails.md`（40 条候选规则） | 完成 |
+| A7 | 综合拍板：Tool Call 数据结构 v1 + 规则格式 v1 + 核心语言选型（TypeScript） | 1 天 | `docs/research/synthesis.md` → 四篇 implemented 笔记 | 完成 |
 
-## Phase B — v0.1 骨架（第 2 周起，依赖 A7）
+## Phase B — v0.1 骨架（TypeScript，Node ≥22，strict）
 
-| ID | 任务 | 产出 | 状态 |
+公共约束：所有模块先读 `docs/research/synthesis.md` 与 `.agents/notes/implemented/architecture/` 四篇笔记；统一类型用 `src/api/types.ts`；`npm run lint && npm run typecheck && npm test` 必须全绿；禁止新增依赖（`yaml` 已预装）。
+
+| ID | 任务 | 产出路径 | 状态 |
 |---|---|---|---|
-| B1 | 核心骨架（语言按 A7）：模块 engine / parser / rules / policy / judge / approval / audit + CLI；CI 自动激活（`ci.yml` 已按 Go/TS/Python 三选一守卫） | 骨架 + build/lint/test 绿 | 待办 |
-| B2 | 统一类型：`ToolCall` / `Decision` / `CheckRequest` / `CheckResponse` | 类型 + 序列化测试 | 待办 |
-| B3 | 规则引擎 + 首批规则：`rules/{shell,filesystem,network}.yaml` ≥10 条（来源 A6） | 引擎 + YAML + 单测 | 待办 |
-| B4 | Shell parser：AST 解析出 executable/args/pipe/redirect/env，禁裸字符串匹配（解析库随 A7 语言定） | parser + 单测 | 待办 |
-| B5 | Policy 引擎：接口 + 内置环境策略（sandbox/production）；OPA 接入选配后置 | policy + 单测 | 待办 |
-| B6 | Judge 接口 + noop 实现（默认关闭，fail-closed 语义不受其影响） | judge | 待办 |
-| B7 | Engine 编排管线（ACL→Parser→Rules→Policy→Judge→Audit）+ CLI `agentfence check` | CLI 可用 | 待办 |
-| B8 | 审计：JSONL 全量记录 ALLOW/DENY | 日志落盘 + 单测 | 待办 |
-| B9 | OpenCode hook 适配（参考 A1 报告；只改 `integrations/`，不动核心判定） | `integrations/opencode` | 待办 |
+| B1 | 核心骨架：package.json / tsconfig strict / eslint typechecked / vitest / 目录结构 | 根配置 + `src/*` | 完成 |
+| B2 | 统一类型：`ToolCall` / `Decision` / `CheckRequest` / `ParsedShell` | `src/api/types.ts` | 完成 |
+| B3 | 规则引擎（loader + 结构化 matcher + priority/deny-overrides 仲裁）+ 首批 40 条 YAML 规则（来源 A6 清单，文件头带 MIT 归属） | `src/rules/`、`rules/*.yaml` | 进行中（agent） |
+| B4 | Shell parser：词法解析 → `ParsedShell`（unquote、`&&`/`;`/`|`/子 shell 切分、重定向、env、间接执行识别）；五条及格线见规则格式笔记 | `src/parser/` | 进行中（agent） |
+| B5 | Policy 引擎：接口 + 内置环境策略（sandbox/production），纯函数；OPA 后置 | `src/policy/`、`policies/` | 进行中（agent） |
+| B6 | Judge 接口 + noop（默认关闭）+ 阈值纯函数（from_untrusted 一票否决最优先；user_requested 永不解 DENY） | `src/judge/` | 进行中（agent） |
+| B8 | 审计：JSONL append-only + 哈希链 + 异步三档背压（best_effort/durable/fail_closed）+ 密钥脱敏 | `src/audit/` | 进行中（agent） |
+| B7 | Engine 编排管线（ACL→Parser→Rules→Policy→Judge→Audit）+ CLI `agentfence check`（依赖 B3–B8） | `src/engine/`、`src/cli/` | 待办 |
+| B9 | OpenCode hook 适配（参考 `docs/research/jev-guard.md`；只改 `integrations/`，不动核心判定） | `integrations/opencode` | 待办 |
 | B10 | `docs/testing.md` 测试政策 + `scripts/verify/` 首批机械规则 3–5 条 | 文档 + 脚本进 CI | 待办 |
 
 ## Phase C — 适配扩展（v0.2–v0.3，依赖 B9 验证适配器模式）
@@ -44,7 +46,7 @@
 
 1. `agentfence check --tool shell --command "rm -rf /"` → DENY，`agentfence check --tool shell --command "ls"` → ALLOW；
 2. 每次判定（含 ALLOW）写入审计日志；
-3. 项目 build / lint / typecheck / test 与 `scripts/check` 全绿。
+3. `npm run lint && npm run typecheck && npm test` 与 `scripts/check` 全绿。
 
 ## 分工原则
 
