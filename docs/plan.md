@@ -30,8 +30,8 @@
 | B6 | Judge 接口 + noop（默认关闭）+ 阈值纯函数（from_untrusted 一票否决最优先；user_requested 永不解 DENY） | `src/judge/` | 完成 |
 | B8 | 审计：JSONL append-only + 哈希链 + 异步三档背压（best_effort/durable/fail_closed）+ 密钥脱敏 | `src/audit/` | 完成 |
 | B7 | Engine 编排管线（ACL→Parser→Rules→Policy→Judge→Audit）+ CLI `agentfence check` | `src/engine/`、`src/cli/` | 进行中（agent） |
-| B9 | **主流 Agent hook 适配**（依赖 B7）：统一 stdin/stdout JSON 归一层 + 各家方言映射 + 按宿主能力降级（ask 不可用时降级警告放行或阻断）。覆盖 OpenCode / Claude Code / Codex CLI / Gemini CLI / Cursor；方言细节见 `docs/research/jev-guard.md` | `integrations/{opencode,claude-code,codex,gemini-cli,cursor}` | 待办 |
-| B10 | `docs/testing.md` 测试政策（已完成）+ `scripts/verify/` 首批机械规则 3–5 条 | 文档 + 脚本进 CI | 部分完成 |
+| B9 | **主流 Agent hook 适配**：统一 stdin/stdout JSON 归一层 + 各家方言映射 + 按宿主能力降级。覆盖 OpenCode / Claude Code / Codex CLI / Gemini CLI / Cursor | `integrations/{core,opencode,claude-code,codex,gemini-cli,cursor}` | 完成 |
+| B10 | `docs/testing.md` 测试政策 + `scripts/verify/` 机械规则 4 条（类型逃逸/裸命令匹配/文档预算/新增依赖）进 CI | 文档 + 脚本 | 完成 |
 
 ## Phase C — 适配扩展（v0.2–v0.3，依赖 B9 验证适配器模式）
 
