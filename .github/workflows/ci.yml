@@ -1,4 +1,4 @@
-# 最小 CI 红线。Go 核心 + Python SDK 双语言；无对应代码时跳过对应 job。
+# 最小 CI 红线。核心语言按 agent 生态选型（候选 TS/Go/Python），三 job 按文件存在自动守卫。
 # 原则：分支保护 + 必须绿才能合并；全量检查归 CI，本地只跑与改动匹配的最小集。
 name: ci
 on:
@@ -7,7 +7,20 @@ on:
     branches: [main, master]
 
 jobs:
-  # L0 三件套：lint / 类型（vet）/ 测试。任一失败即红。
+  # L0 三件套：lint / 类型 / 测试。任一失败即红。
+  node:
+    runs-on: ubuntu-latest
+    if: hashFiles('package.json') != ''
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+
   go:
     runs-on: ubuntu-latest
     if: hashFiles('go.mod') != ''
@@ -39,5 +52,5 @@ jobs:
   #   steps:
   #     - uses: actions/checkout@v4
   #       with: { fetch-depth: 0 }
-  #     - run: go test ./... -coverprofile=coverage.out
-  #     - run: diff-cover coverage.out --compare-branch=origin/main --fail-under=100
+  #     - run: npm run coverage
+  #     - run: diff-cover coverage/lcov.info --compare-branch=origin/main --fail-under=100

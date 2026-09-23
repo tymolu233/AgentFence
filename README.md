@@ -5,9 +5,10 @@
 AgentFence 不判断"Agent 想完成什么"，只判断：**这个 Tool Call 是否允许真正执行？**
 
 - 三态决策：ALLOW / REVIEW / DENY，附 risk 与 confidence；无法判断时 fail-closed
-- 六层管线：Hard Rules → Command Parser（AST 级）→ Tool/Skill ACL → Policy Engine（OPA/Rego）→ AI Risk Judge → Sandbox
+- 七层管线：Tool/Skill ACL → Command Parser（AST 级）→ Hard Rules → Policy Engine（OPA/Rego）→ AI Risk Judge → Approval → Audit；Sandbox 兜底
 - 全量审计：ALLOW 与 DENY 都记录
-- 形态：Go 核心 + CLI + HTTP API + Python SDK
+- 适配主流 Agent：OpenCode / Claude Code / Codex CLI / Gemini CLI / Cursor（原生 hook）、一切 MCP host（MCP Gateway）、任意框架（HTTP API + 薄 SDK）
+- 语言不限定：判定逻辑只实现一份，HTTP Decision API 为跨语言契约；核心语言按 agent 生态适配性选定（候选 TypeScript / Go / Python）
 
 详见 `docs/architecture.md`（架构地图，权威）；原始思路稿存档于 `docs/vision.md`；参考项目学习路线见 `docs/references.md`；任务分解见 `docs/plan.md`。
 
@@ -16,8 +17,8 @@ AgentFence 不判断"Agent 想完成什么"，只判断：**这个 Tool Call 是
 | 版本 | 内容 |
 |---|---|
 | v0.1 | 四模块闭环：rule-engine / policy-engine / jev-judge（接口先行，默认关闭）/ gateway；首个接入 OpenCode，全量审计 |
-| v0.2 | MCP Gateway 接入 |
-| v0.3 | Pentest Policy、Target Authorization |
+| v0.2 | MCP Gateway 接入（一次覆盖所有 MCP host） |
+| v0.3 | Pentest Policy、Target Authorization；Claude Code / Codex CLI / Gemini CLI / Cursor 适配器 |
 | v0.4 | Docker Sandbox、网络隔离 |
 | v0.5 | Skill Scanner、审计增强 |
 

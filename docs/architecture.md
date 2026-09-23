@@ -2,6 +2,8 @@
 
 AgentFence 是 AI Agent 的执行安全网关（Agent Execution Security Gateway）：不判断"Agent 想完成什么"，只判断"这个 Tool Call 是否允许真正执行"。它位于 Agent 与真实世界之间，是执行安全边界，不是 Prompt Guard / 内容审核 / LLM Guardrail，也不是另一个 LLM。
 
+核心语言不限定，按 Agent 生态适配性选定（候选 TypeScript / Go / Python）；HTTP Decision API 是跨语言契约。见 `.agents/notes/proposed/architecture/2026-09-23-language-selection-by-agent-ecosystem.md`。
+
 ## 决策模型
 
 每个 Tool Call 得到三态决策，附风险与置信度：
@@ -39,7 +41,7 @@ ALLOW 之后由 **Sandbox** 兜底：即使前五层判错，Docker / VM / names
 
 ## 关键数据结构
 
-统一 Tool Call：
+统一 Tool Call（各 agent 适配器都把自家事件映射成它）：
 
 ```json
 {
@@ -52,10 +54,20 @@ ALLOW 之后由 **Sandbox** 兜底：即使前五层判错，Docker / VM / names
 }
 ```
 
+## Agent 适配
+
+适配市面主流 Agent 是一等目标，按三层覆盖：
+
+- **Tier 1 · 原生 Hook** — OpenCode（plugin）、Claude Code（PreToolUse hook）、Codex CLI、Gemini CLI、Cursor：逐个实现适配器，挂接各 agent 的 pre-tool-use 点位。
+- **Tier 2 · MCP Gateway** — 以 MCP 代理覆盖所有 MCP host，一次适配最大覆盖面。
+- **Tier 3 · Generic** — HTTP Decision API + 薄 SDK，任意框架（LangChain / CrewAI / AutoGen 等）自行接入。
+
+适配器只做协议转换：把各 agent 的 tool call 事件映射为统一 `ToolCall`，把 `Decision` 映射回各 agent 的放行/阻断语义；判定逻辑只在核心一份。
+
 ## 接口
 
 - **Decision API**：`POST /v1/check`（agent / tool / action / input / context → decision / risk / confidence / matched_rules / reason）
-- **SDK**：Go 核心，Python SDK 第一阶段提供
+- **SDK**：薄客户端，语言跟随核心选型；Python SDK 保证提供（Agent 框架生态）
 - **CLI**：`agentfence check --tool shell --command "..."`；wrapper 模式 `agentfence exec -- <command>`
 - **配置**：单文件（`mode: fail_closed`、rules 开关、按环境的 policy、judge / approval / sandbox 开关）
 
@@ -65,21 +77,22 @@ ALLOW 之后由 **Sandbox** 兜底：即使前五层判错，Docker / VM / names
 
 ## 目录结构
 
+概念布局（具体目录名随语言选型落地，如 Go 用 `cmd/ + internal/`，TS 用 `src/ + packages/`）：
+
 ```
-cmd/agentfence/        # CLI 入口
-internal/              # engine / parser / rules / policy / judge / approval / audit / sandbox
-pkg/                   # api / sdk
+core/                  # engine / parser / rules / policy / judge / approval / audit / sandbox
+api/                   # HTTP Decision API、CLI、SDK
 rules/                 # shell / filesystem / database / network / pentest
 policies/
-integrations/          # opencode / mcp / claude / generic
+integrations/          # opencode / claude-code / codex / gemini-cli / cursor / mcp / generic
 examples/  tests/  docs/
 ```
 
 ## 演进路线
 
-- v0.1 四个模块最小闭环：`internal/rules`（Vigil 思路）、`internal/policy`（DeepintShield 思路）、`internal/judge`（jev-guard 思路，接口先行、默认关闭）、`internal/engine` gateway 编排（Guardian/AgentGuard 思路）；首个接入 OpenCode，产出 ALLOW / REVIEW / DENY。审计自 v0.1 起全量记录。不做 Dashboard、Cloud、大量框架适配、ML/自训模型。
-- v0.2 MCP Gateway 接入
-- v0.3 Pentest Policy 与 Target Authorization
+- v0.1 四个模块最小闭环：rules（Vigil 思路）、policy（DeepintShield 思路）、judge（jev-guard 思路，接口先行、默认关闭）、engine 编排（Guardian/AgentGuard 思路）；首个接入 OpenCode，产出 ALLOW / REVIEW / DENY。审计自 v0.1 起全量记录。不做 Dashboard、Cloud、大量框架适配、ML/自训模型。
+- v0.2 MCP Gateway 接入（一次覆盖所有 MCP host）
+- v0.3 Pentest Policy 与 Target Authorization；Claude Code / Codex CLI / Gemini CLI / Cursor 适配器
 - v0.4 Docker Sandbox 与网络隔离
 - v0.5 Skill Scanner、审计增强（防篡改链）
 
