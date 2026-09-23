@@ -1,0 +1,34 @@
+#!/usr/bin/env sh
+# Phase B 约束：禁止新增 npm 依赖（确需新增走人工评审，先改本脚本白名单）。
+# 有 origin/main 时与其比较；本地无远端时与 HEAD 比较工作区改动。
+set -eu
+cd "$(dirname "$0")/../.."
+
+if git rev-parse --verify origin/main >/dev/null 2>&1; then
+  base="origin/main"
+elif git rev-parse --verify HEAD >/dev/null 2>&1; then
+  base="HEAD"
+else
+  echo "SKIP: no git base"; exit 0
+fi
+
+BASE="$base" node --input-type=commonjs -e '
+const cp = require("child_process");
+const base = process.env.BASE;
+let baseText;
+try {
+  baseText = cp.execSync(`git show ${base}:package.json`, { encoding: "utf8" });
+} catch {
+  console.log("SKIP: base has no package.json");
+  process.exit(0);
+}
+const cur = JSON.parse(cp.readFileSync ? cp.readFileSync("package.json", "utf8") : require("fs").readFileSync("package.json", "utf8"));
+const old = JSON.parse(baseText);
+const keys = (o) => Object.keys({ ...o.dependencies, ...o.devDependencies });
+const added = keys(cur).filter((k) => !keys(old).includes(k));
+if (added.length > 0) {
+  console.error("FAIL: 新增依赖需人工评审: " + added.join(", "));
+  process.exit(1);
+}
+console.log("OK: no new dependencies");
+'

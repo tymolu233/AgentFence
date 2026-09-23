@@ -20,6 +20,8 @@ jobs:
       - run: npm run lint
       - run: npm run typecheck
       - run: npm test
+      # L1 机械规则脚本（scripts/verify/，与本地 scripts/check 同一套）
+      - run: for f in scripts/verify/*; do sh "$f"; done
 
   go:
     runs-on: ubuntu-latest

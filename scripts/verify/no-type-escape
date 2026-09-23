@@ -1,0 +1,13 @@
+#!/usr/bin/env sh
+# 硬规则 2：生产代码禁止类型/lint 逃逸（as unknown / @ts-ignore / @ts-expect-error / eslint-disable）。
+# 测试文件（*.test.ts）豁免：断言宿主 stdout 的 JSON 需要 unknown 收窄。
+set -eu
+cd "$(dirname "$0")/../.."
+
+hits=$(grep -rnE 'as unknown|@ts-ignore|@ts-expect-error|eslint-disable' src/ integrations/ --include='*.ts' --exclude='*.test.ts' 2>/dev/null || true)
+if [ -n "$hits" ]; then
+  echo "FAIL: 生产代码存在类型/lint 逃逸：" >&2
+  echo "$hits" >&2
+  exit 1
+fi
+echo "OK: no type escapes in production code"

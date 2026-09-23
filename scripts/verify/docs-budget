@@ -1,0 +1,11 @@
+#!/usr/bin/env sh
+# 文档字数预算：CONTRIBUTING.md ≤ 800 词（超限先归位到权威文档，再压缩）。
+set -eu
+cd "$(dirname "$0")/../.."
+
+words=$(wc -w < CONTRIBUTING.md | tr -d ' ')
+if [ "$words" -gt 800 ]; then
+  echo "FAIL: CONTRIBUTING.md $words 词，超 800 词预算" >&2
+  exit 1
+fi
+echo "OK: CONTRIBUTING.md $words/800 words"

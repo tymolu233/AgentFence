@@ -1,0 +1,13 @@
+#!/usr/bin/env sh
+# 架构红线：禁止对原始命令字符串做子串/正则匹配。
+# 规则必须在 parser 产出的 token 流（ParsedShell）上判定（见规则格式决策笔记与 A6 绕过清单）。
+set -eu
+cd "$(dirname "$0")/../.."
+
+hits=$(grep -rnE '(command|cmd)\.(includes|indexOf|match|startsWith|endsWith)\(' src/ integrations/ --include='*.ts' 2>/dev/null || true)
+if [ -n "$hits" ]; then
+  echo "FAIL: 发现对原始命令字符串的裸匹配（应走 ParsedShell token 流）：" >&2
+  echo "$hits" >&2
+  exit 1
+fi
+echo "OK: no raw command string matching"
