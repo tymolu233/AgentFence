@@ -58,11 +58,11 @@ allow  otherwise
 
 ## 可借鉴点 / 不可照抄点
 
-**可借鉴（对 AgentFence Go 核心）：**
+**可借鉴（对 AgentFence 判定层）：**
 
-1. **策略与模型解耦**：Jev 只答类型化窄问题（Score/Noul/Choice），deny/ask/allow 是纯函数 `decide`，可单测、可用 env 调阈值（`src/guard.js:119-127`）。AgentFence 应把"评分器"做成接口，策略层放 Go 代码。
+1. **策略与模型解耦**：Jev 只答类型化窄问题（Score/Noul/Choice），deny/ask/allow 是纯函数 `decide`，可单测、可用 env 调阈值（`src/guard.js:119-127`）。AgentFence 应把"评分器"做成接口，策略逻辑放判定层代码。
 2. **三档判定的逃逸设计**：`user_requested` 只把 ask 降 allow、**永不解除 deny**；`from_untrusted` 一票否决在最前面（`src/guard.js:120-123`）。这个优先级顺序值得直接采用。
-3. **会话上下文即判定输入**：轻量 per-session JSON（容量封顶、sha1 命名、0600 权限、7 天清理，`src/session.js:10,29,50-58`），让"用户刚说过 force push"成为可判定的信号。Go 侧可用同样的有界环形结构。
+3. **会话上下文即判定输入**：轻量 per-session JSON（容量封顶、sha1 命名、0600 权限、7 天清理，`src/session.js:10,29,50-58`），让"用户刚说过 force push"成为可判定的信号。判定层可用同样的有界环形结构。
 4. **注入命中→摘录→后续比对**的闭环：flags 带 excerpt 进 context，`from_untrusted` 拿它对照新调用（`src/context.js:28`、`src/guard.js:87-98`）——这是"跨调用追踪投毒"的最小实现。
 5. **结果扫描的工程细节**：<200 字符跳过、头尾截断 60k、NEVER_EXTERNAL 白名单、discussion 类不算注入（避免误报安全文档）。
 6. **适配器矩阵教训**：每个宿主的 ask 能力不同（Codex/Gemini 无 ask、Cursor preToolUse 无 ask、pi 无 UI 时 block），适配层必须按宿主能力降级而不是假设三档都可用。
@@ -75,4 +75,4 @@ allow  otherwise
 2. **每调用一次远程 RTT**（实测 ~580ms–750ms），README 自述"guardrail, not a sandbox"——它承认 hook 可绕过、模型会判错。AgentFence 若要做执行层网关，不能停留在 hook 信任模型。
 3. **工具名白名单靠字符串匹配**（READ_ONLY/NEVER_EXTERNAL，`src/guard.js:103-107`），跨宿主工具命名靠硬编码映射，脆弱；AgentFence 应用结构化工具能力声明（read/write/network 维度）。
 4. **无鉴权/多租户/审计持久化**：session 文件即全部状态，无签名、无防篡改；企业场景不够。
-5. **Node 单文件脚本形态**：每次 hook 冷启动一个 Node 进程，Go 长驻网关的架构（低延迟、连接复用、策略热更新）是天然差异化方向。
+5. **Node 单文件脚本形态**：每次 hook 冷启动一个 Node 进程，长驻 Decision API 服务的架构（低延迟、连接复用、策略热更新）是天然差异化方向。
