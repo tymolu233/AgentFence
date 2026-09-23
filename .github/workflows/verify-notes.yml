@@ -1,0 +1,18 @@
+# Agent Notes 结构自检：push / PR 必跑（规范可执行化的例子）。
+# 本地等价命令：scripts/check-notes
+name: verify-notes
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check note structure
+        run: sh scripts/check-notes

@@ -1,0 +1,43 @@
+#!/usr/bin/env sh
+# 推送前最小检查：按改动路径选检查集，不反射性跑全量。
+# 全量归 CI。用法：scripts/check（lefthook/husky 的 pre-push 钩子直接调它）。
+set -eu
+cd "$(dirname "$0")/.."
+
+# 无 git 仓库时跳过 diff 相关逻辑（kit 直接解压使用的场景）
+if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  changed=$(git diff --name-only origin/main...HEAD 2>/dev/null || git diff --name-only --cached || echo "")
+  echo "$changed" | grep -q . || { echo "no changes"; exit 0; }
+else
+  echo "no git repo, running checks on all files"
+  changed=$(find . -type f \( -name '*.ts' -o -name '*.tsx' -o -name '*.js' -o -name '*.jsx' -o -name '*.py' -o -name '*.go' -o -name '*.rs' -o -name '*.java' -o -name '*.c' -o -name '*.cc' -o -name '*.cpp' -o -name '*.h' -o -name '*.md' \) 2>/dev/null || echo "")
+fi
+
+# 规则一：任何源码/测试改动 → lint + 类型 + 测试
+if echo "$changed" | grep -qE '\.(ts|tsx|js|jsx|py|go|rs|java|c|cc|cpp|h)$'; then
+  echo "== lint =="
+  npm run lint --silent 2>/dev/null || make lint
+  echo "== typecheck =="
+  npm run typecheck --silent 2>/dev/null || make typecheck
+  echo "== test =="
+  npm test --silent 2>/dev/null || make test
+fi
+
+# 规则二：只改文档 → 文档检查（链接、字数预算；没有就跳过）
+if echo "$changed" | grep -qE '\.md$'; then
+  if npm run --silent check:docs >/dev/null 2>&1; then npm run check:docs; fi
+fi
+
+# 规则三：仓库自有的 verify 脚本目录全部执行（L1 起启用）
+if [ -d scripts/verify ]; then
+  for f in scripts/verify/*; do
+    [ -x "$f" ] && "$f"
+  done
+fi
+
+# 规则四：有 Agent Notes 就做结构自检（见 .agents/notes/README.md）
+if [ -d .agents/notes ] && [ -f scripts/check-notes ]; then
+  sh scripts/check-notes
+fi
+
+echo "OK: minimal checks passed"

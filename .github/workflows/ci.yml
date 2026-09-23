@@ -1,0 +1,30 @@
+# 最小 CI 红线。按目标语言替换 lint / typecheck / test 命令。
+# 原则：分支保护 + 必须绿才能合并；全量检查归 CI，本地只跑与改动匹配的最小集。
+name: ci
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      # L0 三件套：lint / 类型 / 测试。任一失败即红。
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+
+  # L1 可选：新增代码覆盖率门禁（需要 diff-cover 或等价工具）
+  # coverage:
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #       with: { fetch-depth: 0 }
+  #     - run: npm ci && npm run coverage
+  #     - run: diff-cover coverage/lcov.info --compare-branch=origin/main --fail-under=100

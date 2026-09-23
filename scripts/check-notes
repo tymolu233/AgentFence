@@ -1,0 +1,92 @@
+#!/usr/bin/env sh
+# Agent Notes 结构自检（POSIX shell，零依赖，任何语言的仓库都能跑）。
+# 检查：路径与文件名、头块、Status 与生命周期目录一致、归档封印、
+#       implemented 禁计划态标题、Alternatives 必写。
+# 语义质量不在脚本范围：写完请过 docs/notes-quality-gate.md。
+set -eu
+cd "$(dirname "$0")/.."
+
+ROOT=.agents/notes
+[ -d "$ROOT" ] || { echo "no $ROOT, skip"; exit 0; }
+
+fail=0
+err() { echo "FAIL: $1"; fail=1; }
+
+LIFECYCLES="proposed implemented rejected archived"
+CLASSES="feature bug-fix simplification architecture process testing"
+
+for lc in $LIFECYCLES; do
+  [ -d "$ROOT/$lc" ] || continue
+  for d in "$ROOT/$lc"/*/; do
+    [ -d "$d" ] || continue
+    c=$(basename "$d")
+    case " $CLASSES " in *" $c "*) ;; *) err "未知 class: $d";; esac
+  done
+done
+
+# 游离文件：lifecycle 目录下不得直接放 .md（必须在 {class}/ 子目录），根下除 README 外不得放 .md
+for f in "$ROOT"/*.md; do
+  [ -f "$f" ] || continue
+  [ "$f" = "$ROOT/README.md" ] || err "根下游离文件（只许 README.md）: $f"
+done
+for f in "$ROOT"/*/*.md; do
+  [ -f "$f" ] || continue
+  case "$f" in "$ROOT"/templates/*) continue;; esac
+  err "错层文件（须为 {lifecycle}/{class}/file.md）: $f"
+done
+for f in "$ROOT"/*/*/*/*.md; do
+  [ -f "$f" ] || continue
+  case "$f" in "$ROOT"/templates/*) continue;; esac
+  err "层级过深（须为 {lifecycle}/{class}/file.md）: $f"
+done
+
+for f in "$ROOT"/*/*/*.md "$ROOT"/archived/*/*/*.md; do
+  [ -f "$f" ] || continue
+  case "$f" in *templates*) continue;; esac
+
+  # 路径深度与文件名 yyyy-mm-dd-topic.md
+  base=$(basename "$f")
+  echo "$base" | grep -Eq '^[0-9]{4}-[0-9]{2}-[0-9]{2}-[a-z0-9]+(-[a-z0-9]+)*\.md$' \
+    || err "文件名须为 yyyy-mm-dd-topic.md: $f"
+
+  lc=$(echo "$f" | cut -d/ -f3)
+
+  # 头块
+  head -1 "$f" | grep -Eq '^# Agent Note: .+' || err "第 1 行须为 '# Agent Note: <标题>': $f"
+  status=$(grep -m1 -E '^Status:' "$f" || true)
+  [ -n "$status" ] || { err "缺 Status 行: $f"; continue; }
+  [ "$(grep -c -E '^Status:' "$f")" = "1" ] || err "Status 行须唯一: $f"
+
+  case "$lc" in
+    proposed)   echo "$status" | grep -Eq '^Status: proposed$' || err "Status 与目录不符: $f";;
+    implemented) echo "$status" | grep -Eq '^Status: implemented$' || err "Status 与目录不符: $f";;
+    rejected)   echo "$status" | grep -Eq '^Status: rejected — .+' || err "Status 须为 'rejected — 原因': $f";;
+    archived)
+      echo "$status" | grep -Eq '^Status: (implemented|rejected)' || err "归档篇 Status 非法: $f"
+      grep -qE '^Archived: [0-9]{4}-[0-9]{2}-[0-9]{2}$' "$f" || err "归档篇缺 'Archived: YYYY-MM-DD': $f";;
+  esac
+
+  # 正文骨架
+  grep -qE '^## (Problem|问题)' "$f" || err "首节须为 ## Problem: $f"
+  grep -qE '^## (Alternatives considered|备选方案|已考虑的替代方案)' "$f" \
+    || err "缺 ## Alternatives considered: $f"
+
+  if [ "$lc" = "implemented" ]; then
+    if grep -qE '^## (Proposal|Plan|Migration plan|Acceptance criteria|提案|计划|迁移计划)' "$f"; then
+      err "implemented 禁计划态标题: $f"
+    fi
+    grep -qE '^## (Decision|决策)' "$f" || err "implemented 缺 ## Decision: $f"
+  fi
+done
+
+# active 笔记内部相对链接有效性
+for f in "$ROOT"/proposed/*/*.md "$ROOT"/implemented/*/*.md "$ROOT"/rejected/*/*.md; do
+  [ -f "$f" ] || continue
+  grep -oE '\]\((\.\./)+[^)#]+\)' "$f" | tr -d ']()' | while read -r link; do
+    target=$(cd "$(dirname "$f")" && readlink -f "$link" 2>/dev/null || true)
+    [ -n "$target" ] && [ -f "$target" ] || echo "WARN: 断链 $f -> $link"
+  done
+done
+
+if [ "$fail" -ne 0 ]; then exit 1; fi
+echo "OK: agent notes structure valid"
