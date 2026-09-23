@@ -1,4 +1,4 @@
-# 最小 CI 红线。核心语言按 agent 生态选型（候选 TS/Go/Python），三 job 按文件存在自动守卫。
+# 最小 CI 红线。核心语言为 TypeScript，Go/Python job 按文件存在自动守卫（step 级探测）。
 # 原则：分支保护 + 必须绿才能合并；全量检查归 CI，本地只跑与改动匹配的最小集。
 name: ci
 on:
@@ -8,45 +8,47 @@ on:
 
 jobs:
   # L0 三件套：lint / 类型 / 测试。任一失败即红。
-  node:
+  check:
     runs-on: ubuntu-latest
-    if: hashFiles('package.json') != ''
     steps:
       - uses: actions/checkout@v4
+
+      - id: stack
+        shell: bash
+        run: |
+          {
+            echo "node=$(test -f package.json && echo true || echo false)"
+            echo "go=$(test -f go.mod && echo true || echo false)"
+            echo "python=$( (test -f pyproject.toml || test -f sdk/python/pyproject.toml) && echo true || echo false)"
+          } >> "$GITHUB_OUTPUT"
+
       - uses: actions/setup-node@v4
+        if: steps.stack.outputs.node == 'true'
         with:
           node-version: 22
-      - run: npm ci
-      - run: npm run lint
-      - run: npm run typecheck
-      - run: npm test
-      # L1 机械规则脚本（scripts/verify/，与本地 scripts/check 同一套）
-      - run: for f in scripts/verify/*; do sh "$f"; done
+      - if: steps.stack.outputs.node == 'true'
+        run: npm ci && npm run lint && npm run typecheck && npm test
 
-  go:
-    runs-on: ubuntu-latest
-    if: hashFiles('go.mod') != ''
-    steps:
-      - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
+        if: steps.stack.outputs.go == 'true'
         with:
           go-version: '1.23'
-      - run: go build ./...
-      - run: go vet ./...
-      - run: go test ./...
+      - if: steps.stack.outputs.go == 'true'
+        run: go build ./... && go vet ./... && go test ./...
 
-  python:
-    runs-on: ubuntu-latest
-    if: hashFiles('sdk/python/pyproject.toml') != '' || hashFiles('pyproject.toml') != ''
-    steps:
-      - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
+        if: steps.stack.outputs.python == 'true'
         with:
           python-version: '3.12'
-      - run: pip install -e .[dev] || pip install -e sdk/python[dev]
-      - run: ruff check .
-      - run: mypy --strict .
-      - run: pytest
+      - if: steps.stack.outputs.python == 'true'
+        run: |
+          pip install -e '.[dev]' || pip install -e 'sdk/python[dev]'
+          ruff check .
+          mypy --strict .
+          pytest
+
+      # L1 机械规则脚本（scripts/verify/，与本地 scripts/check 同一套）
+      - run: for f in scripts/verify/*; do sh "$f"; done
 
   # L1 可选：新增代码覆盖率门禁（需要 diff-cover 或等价工具）
   # coverage:
