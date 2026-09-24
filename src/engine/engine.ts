@@ -27,7 +27,14 @@
  *              fail_closed 背压由 applyAuditBackpressure 把非 DENY 改写为 DENY。
  *
  * 每层耗时累加进 Decision.latency_ms。判定逻辑是进程内纯函数组合，
- * 唯一副作用是审计入队（不变量 1/5/6）。
+ * 副作用只有审计入队与 session 读写（不变量 1/5/6）。
+ *
+ * Session（D4，配置 sessionStore 后启用）：
+ *   入口   带 session_id 的调用注入 store.snapshot() 覆盖调用方自报的
+ *          call.session（不变量 3：运行时状态由网关侧维护）；
+ *   收尾   判定落定后（含背压改写后的有效判定）回写 tool+decision；
+ *   降级   store 读/写失败不阻断管线：注入失败则剥离自报字段按无上下文
+ *          判定，回写失败则丢弃——session 是 judge 的辅助信号而非门禁。
  */
 import { performance } from "node:perf_hooks";
 import type {
@@ -178,6 +185,17 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+/** 回写 session 的输入摘录来源（命令/路径/URL 取首个非空串；截断由 store 负责） */
+const EXCERPT_KEYS = ["command", "file_path", "path", "url"] as const;
+
+function inputExcerpt(call: ToolCall): string | undefined {
+  for (const key of EXCERPT_KEYS) {
+    const value = call.input[key];
+    if (typeof value === "string" && value.length > 0) return value;
+  }
+  return undefined;
+}
+
 export function createEngine(options: EngineOptions): Engine {
   const judgeCfg: Required<Pick<JudgeOptions, "enabled" | "fail_closed" | "timeout_ms">> &
     JudgeOptions = {
@@ -187,9 +205,23 @@ export function createEngine(options: EngineOptions): Engine {
     ...options.judge,
   };
 
-  async function check(call: ToolCall): Promise<Decision> {
+  async function check(rawCall: ToolCall): Promise<Decision> {
     let latencyMs = 0;
     let judgeUsed = false;
+
+    // Session 注入（不变量 3）：带 session_id 时由网关侧 store 提供上下文，
+    // 无条件覆盖调用方自报的 call.session；store 读失败则剥离自报字段，
+    // 降级为无上下文判定（绝不让自报内容透传到判定层）。
+    const store = options.sessionStore;
+    let call = rawCall;
+    if (store !== undefined && rawCall.session_id !== undefined) {
+      try {
+        call = { ...rawCall, session: store.snapshot(rawCall.session_id) };
+      } catch {
+        call = { ...rawCall };
+        delete call.session;
+      }
+    }
 
     /** 每层调用都过 measure，耗时累加进 latency_ms */
     const measure = <T>(fn: () => T): T => {
@@ -209,7 +241,7 @@ export function createEngine(options: EngineOptions): Engine {
       }
     };
 
-    /** 收尾：补 latency_ms / policy_version，写审计（含背压改写），返回最终 Decision */
+    /** 收尾：补 latency_ms / policy_version，写审计（含背压改写），回写 session，返回最终 Decision */
     const finish = (partial: Omit<Decision, "latency_ms" | "policy_version">): Decision => {
       const decision: Decision = {
         ...partial,
@@ -220,7 +252,23 @@ export function createEngine(options: EngineOptions): Engine {
       };
       const record = buildAuditRecord(call, decision, { judge_used: judgeUsed });
       const result = options.audit.record(record);
-      return applyAuditBackpressure(decision, result);
+      const final = applyAuditBackpressure(decision, result);
+      // 判定落定后回写（含背压改写后的有效判定）：网关侧记录
+      // "它做过什么 + 结果如何"，供后续调用的 judge 识别重复试探（不变量 3）。
+      // 回写失败不翻转已经作出的判定。
+      if (store !== undefined && call.session_id !== undefined) {
+        try {
+          const excerpt = inputExcerpt(call);
+          store.appendToolCall(call.session_id, {
+            tool: `${call.tool.name} ${call.tool.action}`,
+            decision: final.decision,
+            ...(excerpt !== undefined ? { input_excerpt: excerpt } : {}),
+          });
+        } catch {
+          /* session 是辅助信号：丢失一条历史不构成放行风险 */
+        }
+      }
+      return final;
     };
 
     // 1. ACL
@@ -384,5 +432,6 @@ export function createEngine(options: EngineOptions): Engine {
   return {
     check,
     close: () => options.audit.close(),
+    ...(options.sessionStore !== undefined ? { session: options.sessionStore } : {}),
   };
 }

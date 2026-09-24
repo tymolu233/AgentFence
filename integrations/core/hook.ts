@@ -8,8 +8,11 @@
  *   归一化失败（缺字段 / 二次解析失败）→ DENY（宿主形状）
  *   engine 装配或判定抛错              → DENY（宿主形状）
  * 非 pre-tool-use 事件（OutOfScopeEvent）是唯一例外：不判定、直通放行。
+ * 其中 UserPromptSubmit 类事件在放行前先把用户本人消息记录进 SessionStore
+ * （D4：judge 的 user_requested 信号数据源；只记录、仍不送判定）。
  */
 import type { Engine } from "../../src/engine/index.js";
+import type { SessionStore } from "../../src/session/index.js";
 import { detectDialect } from "./dialect.js";
 import { createHookEngine } from "./engine.js";
 import { NormalizeError, OutOfScopeEvent, normalizePayload } from "./normalize.js";
@@ -20,6 +23,11 @@ import type { HostResponse, NormalizedHook, StdioDialect } from "./types.js";
 export interface EvaluateHookOptions {
   /** 入口按安装点位钉死方言；缺省则自动识别 */
   dialect?: StdioDialect;
+  /**
+   * 用户消息事件的记录目标；缺省回落 engine.session（装配时注入）。
+   * 两者皆无 → 用户消息事件退化为纯直通（不记录也放行）。
+   */
+  session?: SessionStore;
 }
 
 function errorMessage(error: unknown): string {
@@ -47,6 +55,19 @@ export async function evaluateHook(
     normalized = normalizePayload(payload, dialect);
   } catch (error) {
     if (error instanceof OutOfScopeEvent) {
+      // 用户本人消息事件（UserPromptSubmit）：记录进 session 后直通放行。
+      // 记录失败降级为纯直通——丢一条用户消息是 judge 的信号损失，
+      // 不构成当前请求的放行风险（不变量 5 约束的是判定路径而非辅助状态）。
+      if (error.userMessage !== undefined) {
+        const store = options.session ?? engine.session;
+        if (store !== undefined) {
+          try {
+            store.appendUserMessage(error.userMessage.sessionId, error.userMessage.text);
+          } catch {
+            /* session 写盘失败不阻断放行 */
+          }
+        }
+      }
       return allowThroughResponse(dialect, error.message);
     }
     if (error instanceof NormalizeError) {
@@ -84,7 +105,10 @@ export async function runHookEntry(
       result = denyResponse(dialect, errorMessage(error));
     }
     if (payload !== undefined) {
-      result = await evaluateHook(payload, engine, { dialect });
+      result = await evaluateHook(payload, engine, {
+        dialect,
+        ...(engine.session !== undefined ? { session: engine.session } : {}),
+      });
     }
   } catch (error) {
     result = denyResponse(dialect, `网关初始化失败：${errorMessage(error)}`);

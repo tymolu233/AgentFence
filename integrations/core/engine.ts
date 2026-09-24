@@ -6,6 +6,9 @@
  * 缺省读 cwd 下 agentfence.yaml，再没有则用仓库内置默认
  * （rules/ + policies/default.yaml，审计写 cwd/.agentfence/audit.jsonl）。
  * hook 进程的 cwd 由宿主设定，一般为被打开的项目根。
+ *
+ * Session 状态（D4）与审计同根落盘：<audit 目录>/sessions/（每会话一个
+ * JSON 文件，0600，7 天惰性清理），由 SessionStore 维护（不变量 3）。
  */
 import { mkdirSync } from "node:fs";
 import path from "node:path";
@@ -14,6 +17,7 @@ import { loadCliConfig, type CliConfig } from "../../src/cli/config.js";
 import { createEngine, type Engine } from "../../src/engine/index.js";
 import { createPolicyEngine, loadPolicyFile } from "../../src/policy/index.js";
 import { loadRules } from "../../src/rules/loader.js";
+import { SessionStore } from "../../src/session/index.js";
 
 export function engineFromConfig(config: CliConfig): Engine {
   const rules = loadRules(config.rulesDir);
@@ -31,6 +35,7 @@ export function engineFromConfig(config: CliConfig): Engine {
     policyVersion: `policy-v${String(policyConfig.version)}`,
     ...(config.acl !== undefined ? { acl: config.acl } : {}),
     judge: { enabled: config.judgeEnabled },
+    sessionStore: new SessionStore({ dir: path.join(path.dirname(config.auditPath), "sessions") }),
     audit,
   });
 }

@@ -8,6 +8,7 @@ import type { AuditQueue } from "../audit/index.js";
 import type { Judge, Thresholds } from "../judge/index.js";
 import type { PolicyEngine } from "../policy/index.js";
 import type { Rule } from "../rules/schema.js";
+import type { SessionStore } from "../session/index.js";
 
 /**
  * 单个 agent 的 ACL 条目。语义（检查顺序即下列顺序）：
@@ -62,6 +63,13 @@ export interface EngineOptions {
   policyVersion?: string;
   acl?: AclConfig;
   judge?: JudgeOptions;
+  /**
+   * 会话上下文存储（src/session/）。配置后：check() 对带 session_id 的
+   * 调用注入 store.snapshot()（覆盖调用方自报的 call.session，不变量 3），
+   * 判定落定后回写 tool+decision。未配置则 session 功能整体关闭
+   * （call.session 原样透传——适配层本来就不填它）。
+   */
+  sessionStore?: SessionStore;
   /** 全量审计队列（ALLOW 同记）；由调用方拥有，engine.close() 会关闭它 */
   audit: AuditQueue;
 }
@@ -70,4 +78,10 @@ export interface Engine {
   check(call: ToolCall): Promise<Decision>;
   /** 关闭审计队列（落盘全部积压）；进程退出前必须调用 */
   close(): Promise<void>;
+  /**
+   * 配置的 SessionStore（未配置则缺省）。判定的注入与回写由 engine 内部
+   * 完成；暴露它是为了让 hook 层在用户消息事件（UserPromptSubmit）时
+   * appendUserMessage（见 integrations/core/hook.ts）。
+   */
+  readonly session?: SessionStore;
 }

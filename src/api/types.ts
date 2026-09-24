@@ -30,12 +30,23 @@ export interface CallContext {
   task_token?: string;
 }
 
+/** 不可信内容命中（kind 类目 + 可疑摘录 + 校准概率），由网关侧内容扫描写入 */
 export interface FlaggedUntrusted {
   kind: string;
   excerpt: string;
   p: number;
 }
 
+/**
+ * 会话上下文：judge 的 user_requested / from_untrusted 信号数据源（D4）。
+ * 由 src/session/ SessionStore.snapshot() 产出、engine 在判定前注入，
+ * 一律覆盖调用方自报值（不变量 3）；三类字段皆空时整体缺省：
+ * - user_intent        最近 ≤3 条用户本人消息按 "\n" 连接（每条截 700 字符）。
+ *                      只收录 UserPromptSubmit 类事件；agent 自述与 tool result
+ *                      永不算用户发言（不变量 4 及其亲属条款）;
+ * - recent_tool_calls  最近 ≤6 次调用，形如 "shell execute → DENY（rm -rf /）";
+ * - flagged_untrusted  最近 ≤5 条不可信内容命中。
+ */
 export interface SessionContext {
   user_intent?: string;
   recent_tool_calls?: string[];

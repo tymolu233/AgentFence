@@ -5,6 +5,8 @@
  * 形状非法一律 NormalizeError → 上层 fail-closed 转 DENY（不变量 5）。
  * 非 pre-tool-use 事件（PostToolUse / AfterTool / SessionStart 等）抛
  * OutOfScopeEvent → 上层直接放行，不送判定（网关只把守执行前点位）。
+ * 例外中的例外：UserPromptSubmit 是用户本人发言事件，不送判定但随异常
+ * 挂上 userMessage，由上层记录进 SessionStore 后放行（D4，不变量 3/4）。
  */
 import { randomUUID } from "node:crypto";
 import type { ToolCall } from "../../src/api/types.js";
@@ -19,6 +21,17 @@ export class NormalizeError extends Error {
 /** 事件存在但不是执行前点位：不判定、直接放行 */
 export class OutOfScopeEvent extends Error {
   override readonly name = "OutOfScopeEvent";
+  /**
+   * 用户本人消息（UserPromptSubmit 类事件）：由上层记录进 SessionStore 后
+   * 放行。只收用户亲口输入（不变量 4）；agent 自述意图、tool result 一律
+   * 不挂这里。session_id 或 prompt 缺失时不挂（退化为纯直通）。
+   */
+  readonly userMessage?: { sessionId: string; text: string };
+
+  constructor(message: string, userMessage?: { sessionId: string; text: string }) {
+    super(message);
+    if (userMessage !== undefined) this.userMessage = userMessage;
+  }
 }
 
 function fail(message: string): never {
@@ -68,6 +81,19 @@ function normalizeClaudeStyle(
   dialect: "claude-code" | "codex" | "copilot",
 ): NormalizedHook {
   const event = asString(payload.hook_event_name) ?? "PreToolUse";
+  if (event === "UserPromptSubmit") {
+    // 用户本人发言事件：挂上 userMessage 由上层记录进 session 后放行
+    // （它仍是不执行 tool 的事件：只记录、不送判定）。同方言的
+    // codex / copilot 若复用该事件名同样处理。
+    const sessionId = asString(payload.session_id);
+    const prompt = asString(payload.prompt);
+    throw new OutOfScopeEvent(
+      `事件 ${event} 不是执行前点位，记录用户消息后放行`,
+      sessionId !== undefined && prompt !== undefined
+        ? { sessionId, text: prompt }
+        : undefined,
+    );
+  }
   if (event !== "PreToolUse") {
     throw new OutOfScopeEvent(`事件 ${event} 不是执行前点位，不送判定`);
   }
@@ -198,7 +224,10 @@ function normalizeCursor(payload: Record<string, unknown>): NormalizedHook {
         );
       }
       if (!isRecord(parsed)) fail("preToolUse 的 tool_input 解析后必须是对象");
-      // agent_message 是 agent 自述意图而非用户发言（不变量 4 精神），不进 session.user_intent
+      // agent_message 是 agent 自述意图而非用户发言：不写进 session 的
+      // user_messages（不变量 4 亲属条款——只有用户亲口输入才算用户发言；
+      // 若让 agent 自述污染 user_intent，agent 可自导"用户已批准"的
+      // user_requested 信号绕过 judge）
       return { dialect: "cursor", event, call: baseCall("cursor", payload, toolName, parsed) };
     }
   }
