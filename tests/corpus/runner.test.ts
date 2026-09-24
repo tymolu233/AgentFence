@@ -104,7 +104,6 @@ function loadAdversarial(file: string): AdversarialEntry[] {
 // 每条给出根因；条目开始满足 expect 时套件会变红，提示从此清单移除。
 // ---------------------------------------------------------------------------
 const KNOWN_MISSES: Readonly<Record<string, string>> = {
-  "byp-heredoc-sh": "heredoc 载荷在重定向内，不进 token 流；sh 无 -c 不标 indirect（待 parser：redirects.stdin 存在即标 indirect）",
   "byp-make-destroy": "配置外置（A6-5 自承认盲区）：Makefile 语义不在命令字符串里；属环境维度信号，规则层之外",
 };
 

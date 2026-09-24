@@ -199,6 +199,26 @@ describe("间接执行识别（indirect）", () => {
     expect(first("sh /tmp/x.sh").indirect).toBe(true);
   });
 
+  it("heredoc 喂脚本进 shell（与管道进 shell 同构）", () => {
+    const shell = parseOk("sh <<'EOF'\nrm -rf /\nEOF");
+    expect(shell.commands).toHaveLength(1);
+    expect(shell.commands[0]?.executable).toBe("sh");
+    expect(shell.commands[0]?.indirect).toBe(true);
+    expect(shell.commands[0]?.redirects.stdin).toBeDefined();
+  });
+
+  it("文件输入重定向进 shell（sh < script.sh）", () => {
+    const shell = parseOk("bash < /tmp/x.sh");
+    expect(shell.commands[0]?.executable).toBe("bash");
+    expect(shell.commands[0]?.indirect).toBe(true);
+  });
+
+  it("stdin 重定向只影响 shell 解释器：cat <<EOF 不算间接执行", () => {
+    const shell = parseOk("cat <<'EOF'\nplain text\nEOF");
+    expect(shell.commands[0]?.executable).toBe("cat");
+    expect(shell.commands[0]?.indirect).toBe(false);
+  });
+
   it("参数中的命令替换递归为可见子命令", () => {
     const shell = parseOk("echo $(rm -rf /)");
     expect(shell.commands).toHaveLength(2);

@@ -993,6 +993,9 @@ class ShellParser {
     let indirect = execWord.hasExpansion || execWord.hasSubstitution;
     let recursePayload: string | null = null;
     const base = basename(executable);
+    // heredoc（<<）/ here-string（<<<）/ 文件输入（<）：shell 从非 tty stdin 读不透明脚本，
+    // 与管道进 shell 同构（heredoc 正文不进 token 流是词法层既定行为）
+    const hasStdinRedirect = redirects.some((r) => r.op.startsWith("<"));
 
     if (base === "eval") {
       indirect = true;
@@ -1002,7 +1005,7 @@ class ShellParser {
       if (probe.payload !== undefined) {
         indirect = true;
         recursePayload = probe.payload;
-      } else if (pipedStdin || probe.hasPositional) {
+      } else if (pipedStdin || probe.hasPositional || hasStdinRedirect) {
         indirect = true;
       }
     } else if (base === "xargs" || base === "source" || base === ".") {
