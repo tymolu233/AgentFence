@@ -14,7 +14,8 @@
     "build": "tsc -p tsconfig.json",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run --exclude \"**/*.live.test.ts\"",
+    "test:live": "vitest run live.test --testTimeout=120000"
   },
   "dependencies": {
     "yaml": "^2.6.0"

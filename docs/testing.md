@@ -18,7 +18,7 @@
 2. **规则绕过案例进回归**：`docs/research/agent-guardrails.md`"易绕过模式"一节的每个案例都要有对应 parser 或 matcher 测试。
 3. **fail-closed 路径必须测**：非法 YAML、解析失败、策略缺失、审计队列满——每条都要断言拒绝而非放行。
 4. **快照**：CLI 输出与 HTTP 响应形状用快照；改快照与改代码同 PR。
-5. **无网络可回放**：测试不访问外网；调研报告只作设计依据，不进测试依赖。
+5. **无网络可回放**：默认套件（`npm test`）不访问外网；调研报告只作设计依据，不进测试依赖。**唯一例外**是 live 套件 `src/**/*.live.test.ts`（`npm run test:live`）：opt-in、打真实外部 API（如 JevJudge → Jev）、依赖真实凭证（`JEV_API_KEY` 或仓库根 `.env`，无凭证时整个文件 skip），不进默认套件、不进 CI；断言只限基本合理性（档位顺序 / 值域 / confidence 存在），不断言模型精确输出。默认套件通过 `vitest run --exclude "**/*.live.test.ts"` 在 vitest 默认排除之上追加排除，永远无网络。需要代理的网络用 `NODE_USE_ENV_PROXY=1 HTTPS_PROXY=http://127.0.0.1:7890 npm run test:live`（Node ≥22.14）。
 
 ## 门槛
 
