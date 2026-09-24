@@ -201,6 +201,111 @@ describe("engine 管线编排", () => {
     });
   });
 
+  describe("indirect 启发式（parser 及格线第 3 条的判定层消费）", () => {
+    it("任一子命令 indirect 且前面各层无结论 → REVIEW（HIGH/0.8/meta.indirect-execution）", async () => {
+      const { engine } = makeEngine();
+      const decision = await engine.check(shellCall("cat cmds.txt | xargs sh"));
+      expect(decision.decision).toBe("REVIEW");
+      expect(decision.risk).toBe("HIGH");
+      expect(decision.confidence).toBe(0.8);
+      expect(decision.decision_layer).toBe("rules");
+      expect(decision.matched_rules).toEqual(["meta.indirect-execution"]);
+      await engine.close();
+    });
+
+    it("无 indirect 迹象 → 不触发，仍落默认 ALLOW", async () => {
+      const { engine } = makeEngine();
+      const decision = await engine.check(shellCall("cat app.log | grep -i error"));
+      expect(decision.decision).toBe("ALLOW");
+      expect(decision.matched_rules).toEqual([]);
+      await engine.close();
+    });
+
+    it("deny-overrides：载荷展开命中 DENY 规则 → 规则层短路，启发式不抢", async () => {
+      const { engine } = makeEngine();
+      const decision = await engine.check(shellCall("bash -c 'rm -rf /'"));
+      expect(decision.decision).toBe("DENY");
+      expect(decision.decision_layer).toBe("rules");
+      expect(decision.matched_rules).toContain("fs.rm-recursive-guarded-path");
+      expect(decision.matched_rules).not.toContain("meta.indirect-execution");
+      await engine.close();
+    });
+
+    it("明确规则 REVIEW 同样优先于启发式", async () => {
+      const { engine } = makeEngine();
+      const decision = await engine.check(shellCall("bash -c 'fdisk /dev/sda'"));
+      expect(decision.decision).toBe("REVIEW");
+      expect(decision.decision_layer).toBe("rules");
+      expect(decision.matched_rules).not.toEqual(["meta.indirect-execution"]);
+      await engine.close();
+    });
+
+    it("policy DENY 结论压制启发式（decision_layer: policy）", async () => {
+      const { engine } = makeEngine();
+      const decision = await engine.check(
+        shellCall("cat cmds.txt | xargs sh", {
+          tool: { name: "shell", action: "delete", category: "shell" },
+          context: { target: "production" },
+        }),
+      );
+      expect(decision.decision).toBe("DENY");
+      expect(decision.decision_layer).toBe("policy");
+      expect(decision.matched_rules).toEqual([]);
+      await engine.close();
+    });
+
+    it("policy 确定 ALLOW 落定，不再触发启发式", async () => {
+      const { engine } = makeEngine();
+      const decision = await engine.check(
+        shellCall("bash /tmp/deploy.sh", {
+          tool: { name: "shell", action: "read", category: "shell" },
+        }),
+      );
+      expect(decision.decision).toBe("ALLOW");
+      expect(decision.decision_layer).toBe("policy");
+      await engine.close();
+    });
+
+    it("judge 启用时启发式仍先行：indirect 灰区不调 judge", async () => {
+      let judgeCalled = false;
+      const spyJudge: Judge = {
+        assess: () => {
+          judgeCalled = true;
+          return Promise.resolve(CALM);
+        },
+      };
+      const { engine } = makeEngine({ judge: { enabled: true, judge: spyJudge } });
+      const decision = await engine.check(shellCall("cat cmds.txt | xargs sh"));
+      expect(decision.decision).toBe("REVIEW");
+      expect(decision.decision_layer).toBe("rules");
+      expect(judgeCalled).toBe(false);
+      await engine.close();
+    });
+
+    it("reason 指出子命令序号、可执行位与间接形态", async () => {
+      const { engine } = makeEngine();
+      const xargs = await engine.check(shellCall("cat cmds.txt | xargs sh"));
+      expect(xargs.reason).toContain("#2");
+      expect(xargs.reason).toContain("xargs");
+      expect(xargs.reason).toContain("间接执行");
+
+      const pipedSh = await engine.check(shellCall("echo xxx | base64 -d | sh"));
+      expect(pipedSh.reason).toContain("#3");
+      expect(pipedSh.reason).toContain("`sh`");
+      expect(pipedSh.reason).toContain("stdin");
+      expect(pipedSh.reason).toContain("载荷不可见");
+
+      const scriptFile = await engine.check(shellCall("bash /tmp/deploy.sh"));
+      expect(scriptFile.reason).toContain("`bash`");
+      expect(scriptFile.reason).toContain("脚本文件");
+
+      const varIndirect = await engine.check(shellCall('CMD="terraform destroy"; $CMD'));
+      expect(varIndirect.reason).toContain("$CMD");
+      expect(varIndirect.reason).toContain("变量/命令替换");
+      await engine.close();
+    });
+  });
+
   describe("Judge 层", () => {
     it("默认配置 judge 关闭：灰区默认 ALLOW 且不调用 judge", async () => {
       const { engine, readRecords } = makeEngine();

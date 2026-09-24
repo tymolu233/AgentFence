@@ -12,13 +12,18 @@
  *              （decision_layer: "rules"，matched_rules 带命中 id）。
  *   4. Policy  policy.decide 返回 DENY/REVIEW → 短路（decision_layer: "policy"）；
  *              返回 ALLOW 是确定结论 → ALLOW 落定，不再进 judge；
- *              返回 null = 策略无意见 → 灰区，进 judge 层。
- *   5. Judge   仅 enabled:true 且前面无结论时调用 assess + decide；
+ *              返回 null = 策略无意见 → 继续向下。
+ *   5. indirect 启发式兜底（parser 及格线第 3 条）：任一子命令带 parser 的
+ *              indirect 标记且前面各层无结论 → REVIEW（risk HIGH，
+ *              confidence 0.8，decision_layer: "rules"，matched_rules 固定
+ *              ["meta.indirect-execution"] 以便审计区分于具体类目规则）。
+ *              明确规则 DENY/REVIEW 与 policy 结论优先，不被启发式抢走。
+ *   6. Judge   仅 enabled:true 且前面无结论时调用 assess + decide；
  *              调用失败/超时/未接线 → 按 fail_closed（默认 true → DENY）。
- *              默认配置 judge 关闭，灰区落到第 6 步。
- *   6. 默认    rules 无命中、policy 无意见、judge 未启用 → ALLOW
+ *              默认配置 judge 关闭，灰区落到第 7 步。
+ *   7. 默认    rules 无命中、policy 无意见、无 indirect 迹象、judge 未启用 → ALLOW
  *              （"无命中即 ALLOW" 是规则层的既定默认语义）。
- *   7. Audit   每次判定（含 ALLOW）经 buildAuditRecord 写入 AuditQueue；
+ *   8. Audit   每次判定（含 ALLOW）经 buildAuditRecord 写入 AuditQueue；
  *              fail_closed 背压由 applyAuditBackpressure 把非 DENY 改写为 DENY。
  *
  * 每层耗时累加进 Decision.latency_ms。判定逻辑是进程内纯函数组合，
@@ -28,6 +33,7 @@ import { performance } from "node:perf_hooks";
 import type {
   Decision,
   DecisionLayer,
+  ParsedCommand,
   ParsedShell,
   RiskLevel,
   ToolCall,
@@ -42,6 +48,10 @@ import type { AclConfig, Engine, EngineOptions, JudgeOptions } from "./types.js"
 const JUDGE_CONFIDENCE = 0.7;
 /** 默认 ALLOW 的置信度：没有任何一层有意见，是"放行灰区"而非"确定安全" */
 const DEFAULT_ALLOW_CONFIDENCE = 0.5;
+/** indirect 启发式的置信度：parser 的确定性结构信号，但载荷不可见、无法判明意图 */
+const INDIRECT_CONFIDENCE = 0.8;
+/** indirect 启发式的审计标识：非 YAML 规则，用 meta. 前缀与具体类目规则区分 */
+const INDIRECT_META_RULE_ID = "meta.indirect-execution";
 
 const RISK_FROM_SCORE: readonly RiskLevel[] = ["LOW", "MEDIUM", "HIGH", "CRITICAL"];
 
@@ -76,6 +86,66 @@ export function checkAcl(acl: AclConfig | undefined, call: ToolCall): string | u
   }
   if (entry.allow !== undefined && !toolMatches(entry.allow, call)) {
     return `agent ${call.agent_id} ACL 白名单不含工具 ${call.tool.name}`;
+  }
+  return undefined;
+}
+
+/**
+ * 与 parser/shell.ts 的 SHELL_EXECUTABLES / -c 探测保持一致；
+ * 仅用于 reason 的间接形态描述——是否检出由 parser 写入的 indirect 标记决定。
+ */
+const SHELL_LIKE_EXECUTABLES = new Set([
+  "sh",
+  "bash",
+  "zsh",
+  "dash",
+  "ash",
+  "ksh",
+  "fish",
+  "csh",
+  "tcsh",
+]);
+const SHELL_C_FLAG_RE = /^-[A-Za-z]*c/;
+
+function commandBasename(executable: string): string {
+  const slash = Math.max(executable.lastIndexOf("/"), executable.lastIndexOf("\\"));
+  return (slash === -1 ? executable : executable.slice(slash + 1)).toLowerCase();
+}
+
+/** 间接执行形态的人类可读描述（eval / shell -c / 脚本文件 / stdin 管道 / xargs / source / 变量或命令替换的可执行位） */
+function describeIndirectForm(cmd: ParsedCommand): string {
+  const base = commandBasename(cmd.executable);
+  if (base === "eval") return "eval 把拼接字符串当命令执行";
+  if (base === "xargs") return "xargs 把管道/文件输入当命令执行";
+  if (base === "source" || base === ".") return "source 动态加载脚本";
+  if (SHELL_LIKE_EXECUTABLES.has(base)) {
+    const args = cmd.args;
+    for (let i = 0; i < args.length; i += 1) {
+      const arg = args[i] ?? "";
+      if (arg === "--") {
+        if (i + 1 < args.length) return `\`${base}\` 执行脚本文件（内容不在命令文本内）`;
+        break;
+      }
+      if (SHELL_C_FLAG_RE.test(arg)) return `\`${base} -c\` 执行内联脚本载荷`;
+      if (arg === "-") return `\`${base}\` 从 stdin 读取脚本（管道喂入）`;
+      if (!arg.startsWith("-")) return `\`${base}\` 执行脚本文件（内容不在命令文本内）`;
+    }
+    return `\`${base}\` 从 stdin 读取脚本（管道喂入）`;
+  }
+  if (cmd.executable.includes("$") || cmd.executable.includes("`")) {
+    return "可执行位由变量/命令替换展开，未经求值无法判明";
+  }
+  return "间接执行（parser indirect 标记）";
+}
+
+/** 首个带 indirect 标记的子命令；ordinal 是 1-based 序号（供审计与人阅读） */
+function firstIndirectCommand(
+  parsed: ParsedShell | undefined,
+): { ordinal: number; cmd: ParsedCommand } | undefined {
+  if (parsed === undefined) return undefined;
+  for (let i = 0; i < parsed.commands.length; i += 1) {
+    const cmd = parsed.commands[i];
+    if (cmd !== undefined && cmd.indirect) return { ordinal: i + 1, cmd };
   }
   return undefined;
 }
@@ -239,7 +309,24 @@ export function createEngine(options: EngineOptions): Engine {
       });
     }
 
-    // 5. Judge（仅灰区触发；默认关闭）
+    // 5. indirect 启发式兜底：任一子命令带 parser 的间接执行标记且前面各层
+    //    无结论 → REVIEW。规则 DENY/REVIEW 与 policy 结论已在上面短路
+    //    （deny-overrides 不被启发式抢走）；只兜"载荷不可见"的灰区。
+    const indirectHit = measure(() => firstIndirectCommand(parsed));
+    if (indirectHit !== undefined) {
+      return finish({
+        decision: "REVIEW",
+        risk: "HIGH",
+        confidence: INDIRECT_CONFIDENCE,
+        matched_rules: [INDIRECT_META_RULE_ID],
+        decision_layer: "rules",
+        reason:
+          `子命令 #${String(indirectHit.ordinal)} \`${indirectHit.cmd.executable}\` 检出间接执行：` +
+          `${describeIndirectForm(indirectHit.cmd)}；载荷不可见，规则层无法判定，按兜底启发式要求人工复核`,
+      });
+    }
+
+    // 6. Judge（仅灰区触发；默认关闭）
     if (judgeCfg.enabled) {
       judgeUsed = true;
       try {
@@ -283,7 +370,7 @@ export function createEngine(options: EngineOptions): Engine {
       }
     }
 
-    // 6. 默认 ALLOW：rules 无命中、policy 无意见、judge 未启用
+    // 7. 默认 ALLOW：rules 无命中、policy 无意见、无 indirect 迹象、judge 未启用
     return finish({
       decision: "ALLOW",
       risk: "LOW",

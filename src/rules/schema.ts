@@ -42,14 +42,18 @@ export type FlagExpectation = true | string;
 /**
  * 结构化 match 子句。同一对象内字段取 AND；`any` 取 OR（最多嵌套一层）。
  *
- * - tool            命中 ToolCall.tool.name 或 tool.category（小写比较）
- * - argv0           可执行名（basename、去 .exe、小写后全等；列表为 OR）
- * - argv0_regex     对同一归一化 argv0 的有界正则（/.../flags 字面量）
- * - subcommand      位置参数前缀序列；元素支持 `*`/`?` glob
- * - flags           全部满足（归一化短 flag 拆分、单/双横线等价、别名折叠）
- * - flags_any       至少满足一项
- * - args_regex      有界正则，命中任一位置参数即真（内联 SQL 等；列表为 OR）
- * - target_guarded  语义谓词：位置参数含守卫目标（/、~、.、..、$HOME 等）
+ * - tool             命中 ToolCall.tool.name 或 tool.category（小写比较）
+ * - argv0            可执行名（basename、去 .exe、小写后全等；列表为 OR）
+ * - argv0_regex      对同一归一化 argv0 的有界正则（/.../flags 字面量）
+ * - subcommand       位置参数前缀序列；元素支持 `*`/`?` glob
+ * - flags            全部满足（归一化短 flag 拆分、单/双横线等价、别名折叠）
+ * - flags_any        至少满足一项
+ * - args_regex       有界正则，命中任一位置参数即真（内联 SQL 等；列表为 OR）
+ * - target_guarded   语义谓词：位置参数含守卫目标（/、~、.、..、$HOME、裸 *、
+ *                    /etc /usr 等系统目录及其子路径、Windows/MSYS 盘符根）
+ * - destructive_find 语义谓词：find 的删除语义（-delete，或 -exec/-execdir 直调 rm）
+ * - stdin_from       跨子命令谓词：本命令为无 argv 裸命令（stdin 载荷不可见），
+ *                    且更早的子命令 argv0 属于列表（近似"shell 管道自 curl/wget"）
  */
 export interface RuleMatch {
   tool?: string | string[];
@@ -60,6 +64,8 @@ export interface RuleMatch {
   flags_any?: Record<string, FlagExpectation>;
   args_regex?: string[];
   target_guarded?: boolean;
+  destructive_find?: boolean;
+  stdin_from?: string[];
   any?: RuleMatch[];
 }
 

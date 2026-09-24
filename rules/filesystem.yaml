@@ -12,7 +12,7 @@
     argv0: [rm]
     flags:
       recursive: true # -r / -R / --recursive 归一化
-    target_guarded: true # 语义谓词：目标为 / ~ . .. $HOME 等守卫位置
+    target_guarded: true # 语义谓词：/ ~ . .. $HOME、裸 *、系统目录及其子路径、盘符根
   refs:
     - "https://github.com/roboticforce/agent-guardrails (MIT) — settings.json deny 清单"
     - "docs/research/agent-guardrails.md"
@@ -23,7 +23,37 @@
       - "rm -rf ."
       - "rm -rf /*"
       - "rm -r --no-preserve-root /"
+      - "rm -rf *" # 裸 glob：当前目录整体（语料 byp-cd-then-rm-star 同形）
+      - "rm -rf /etc" # 系统目录（语料 byp-rm-etc）
+      - "rm -rf /usr/local" # 系统目录子路径：前缀语义
+      - "rm -rf C:/" # Windows 盘符根（反斜杠形态 C:\\ 归一后同判）
     allow:
       - "rm -rf ./node_modules"
       - "rm -r ./build"
       - "rm -f ./tmp.txt"
+      - "cat /etc/nginx/nginx.conf" # 谓词只挂在 rm 删除语义上，读取系统配置不受影响
+
+# find 的删除语义与 rm -rf 同效（语料 byp-find-delete；A6-2 等效命令）。
+# `-delete` 是单横线长谓词，flag 词法化无法表达，故用语义谓词识别原始 argv。
+- id: fs.find-destructive
+  category: filesystem
+  severity: critical
+  action: DENY
+  priority: 91
+  match:
+    tool: shell
+    argv0: [find]
+    destructive_find: true # -delete，或 -exec/-execdir 后直调 rm
+  refs:
+    - "https://github.com/roboticforce/agent-guardrails (MIT) — settings.json deny 清单（rm -rf 等效面）"
+    - "tests/corpus/adversarial.yaml — byp-find-delete（A6-2 等效命令）"
+  tests:
+    deny:
+      - "find / -delete"
+      - "find /var/lib -name '*.tmp' -delete"
+      - "find /tmp -exec rm -rf {} +"
+      - "find . -execdir /bin/rm {} ;"
+    allow:
+      - "find . -name '*.log'"
+      - "find / -type f -mtime +30"
+      - "find . -exec ls -l {} ;" # -exec 调的不是 rm

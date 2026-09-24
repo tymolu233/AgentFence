@@ -4,6 +4,8 @@
  * - unquote/解转义/token 重组后才进匹配；
  * - 按 && || ; | & 换行切分子命令，子 shell 与命令替换递归展开为同级 ParsedCommand；
  * - 间接执行（eval / sh -c / 管道进 shell / xargs / source / $CMD / $(...)）打 indirect；
+ * - 包装命令（sudo / env / timeout / nice / nohup / stdbuf / command / builtin）
+ *   递归解包到内层真实命令，剥掉的包装链记入 wrapper 字段供审计溯源；
  * - fail-closed：解析失败返回 { ok: false }，绝不向调用方抛异常；
  * - 不做变量求值：$VAR / $(...) 在 token 值中保留字面，不确定性由 indirect 体现。
  */
@@ -663,6 +665,173 @@ function shellProbe(args: string[]): { payload: string | undefined; hasPositiona
   return { payload: undefined, hasPositional: false };
 }
 
+/**
+ * 包装命令解包（D3a，漏拦根因 #4 的 parser 半边）。
+ *
+ * sudo / env / timeout / nice / nohup / stdbuf / command / builtin 这类包装器
+ * 执行时 argv0 是包装器本身，规则按 argv0 路由必然落空；解包后 executable/args
+ * 指向内层真实命令，剥掉的包装链记入 ParsedCommand.wrapper 供审计溯源。
+ *
+ * 语义约定（fail-closed 的可见性取舍）：
+ * - 未知长 flag（--xxx）一律视为"选项边界不可知"，放弃解包保持原样——长 flag
+ *   是否吞值无法猜测，猜错会把选项值误当命令；
+ * - 未知短 flag 按布尔吞掉——包装器短选项集很小且基本稳定，真实 shell 下非法
+ *   短选项会让包装器报错不执行，宁多看见（把内层命令暴露给规则层）；
+ * - abortShortFlags 列出改变"执行"语义的短 flag，遇之放弃解包：
+ *   sudo 的 s/i/e（shell 载荷 / sudoedit）与 command 的 v/V（只查路径不执行）；
+ * - VAR=x 前缀：sudo / env 语义允许，剥掉并入 env 字段（与行首赋值同语义）；
+ * - 裸包装器 / 只有选项没有命令 → 保持原样不解包，不是错误；
+ * - 残留间隙（有意不处理）：env -S/--split-string 的载荷需要二次分词，
+ *   遇 -S 消耗其值后通常无内层命令可见，命令保持 argv0=env。
+ */
+interface WrapperSpec {
+  /** 消耗值的短 flag 字母；值可连写（-o0 / -n5 / -uuser）或为下一个 token */
+  shortValueFlags?: string;
+  /** 消耗值的长 flag（--name=v 或 --name v） */
+  longValueFlags?: ReadonlySet<string>;
+  /** 允许出现的长 flag 布尔集；不在表内的长 flag → 放弃解包 */
+  longBoolFlags?: ReadonlySet<string>;
+  /** 出现即放弃解包的短 flag 字母（见顶部注释） */
+  abortShortFlags?: string;
+  /** 允许 VAR=x 前缀并入 env（sudo / env） */
+  assignments?: boolean;
+  /** 需跳过的固定位置参数个数（timeout 的 DURATION=1） */
+  positionalSkips?: number;
+  /** 允许 nice 老式 -N 数字 nice 值 */
+  numericShortFlags?: boolean;
+}
+
+/** 各包装器的选项规格；选项表以 GNU coreutils / sudo 现行选项为准 */
+const WRAPPER_SPECS: Record<string, WrapperSpec> = {
+  sudo: {
+    shortValueFlags: "uUghpCDRrt",
+    abortShortFlags: "sie",
+    longValueFlags: new Set([
+      "user",
+      "other-user",
+      "group",
+      "host",
+      "prompt",
+      "close-from",
+      "chdir",
+      "chroot",
+      "role",
+      "type",
+    ]),
+    longBoolFlags: new Set([
+      "askpass",
+      "background",
+      "preserve-env",
+      "non-interactive",
+      "stdin",
+      "set-home",
+      "list",
+      "validate",
+      "reset-timestamp",
+      "remove-timestamp",
+      "help",
+      "version",
+    ]),
+    assignments: true,
+  },
+  env: {
+    shortValueFlags: "uCS",
+    longValueFlags: new Set(["unset", "chdir", "split-string"]),
+    longBoolFlags: new Set(["ignore-environment", "null", "help", "version"]),
+    assignments: true,
+  },
+  timeout: {
+    shortValueFlags: "sk",
+    longValueFlags: new Set(["signal", "kill-after"]),
+    longBoolFlags: new Set(["foreground", "verbose", "preserve-status", "help", "version"]),
+    positionalSkips: 1,
+  },
+  nice: {
+    shortValueFlags: "n",
+    longValueFlags: new Set(["adjustment"]),
+    longBoolFlags: new Set(["help", "version"]),
+    numericShortFlags: true,
+  },
+  nohup: {},
+  stdbuf: {
+    shortValueFlags: "ioe",
+    longValueFlags: new Set(["input", "output", "error"]),
+    longBoolFlags: new Set(["help", "version"]),
+  },
+  command: {
+    abortShortFlags: "vV",
+  },
+  builtin: {},
+};
+
+interface WrapperStep {
+  /** 内层真实命令词 */
+  inner: Word;
+  /** 从包装器词之后到内层词（含）被剥掉的词数 */
+  consumed: number;
+  /** 解包中剥掉的 VAR=x（sudo / env 语义），并入命令 env 字段 */
+  assignments: Record<string, string>;
+}
+
+/** 扫描单个包装器的参数区定位内层真实命令；无法确定边界（无内层命令 / 未知长 flag）返回 null。 */
+function scanWrapperArgs(spec: WrapperSpec, args: Word[]): WrapperStep | null {
+  const assignments: Record<string, string> = {};
+  let positionalSkips = spec.positionalSkips ?? 0;
+  for (let i = 0; i < args.length; i += 1) {
+    const w = args[i];
+    if (w === undefined) return null;
+    const v = w.value;
+    if (v === "--") {
+      const inner = args[i + 1];
+      if (inner === undefined) return null;
+      return { inner, consumed: i + 1, assignments };
+    }
+    if (spec.assignments === true && ASSIGN_RE.test(v)) {
+      const eq = v.indexOf("=");
+      assignments[v.slice(0, eq)] = v.slice(eq + 1);
+      continue;
+    }
+    if (v.startsWith("--")) {
+      const body = v.slice(2);
+      const eq = body.indexOf("=");
+      const name = eq === -1 ? body : body.slice(0, eq);
+      if (spec.longValueFlags?.has(name) === true) {
+        if (eq === -1) {
+          i += 1; // --name v：值是下一个 token
+          if (i >= args.length) return null;
+        }
+        continue;
+      }
+      if (spec.longBoolFlags?.has(name) !== true) return null;
+      continue;
+    }
+    if (v.startsWith("-") && v.length > 1) {
+      const cluster = v.slice(1);
+      for (let j = 0; j < cluster.length; j += 1) {
+        const ch = cluster.charAt(j);
+        if (spec.abortShortFlags?.includes(ch) === true) return null;
+        if (spec.numericShortFlags === true && isDigit(ch)) continue;
+        if (spec.shortValueFlags?.includes(ch) === true) {
+          // 连写值（-o0）时簇处理完毕；值位在簇尾（-o 0）则消耗下一个 token
+          if (j + 1 === cluster.length) {
+            i += 1;
+            if (i >= args.length) return null;
+          }
+          break;
+        }
+      }
+      continue;
+    }
+    // 普通词：先跳过包装器自身的位置参数（timeout 的 DURATION），随后即内层命令
+    if (positionalSkips > 0) {
+      positionalSkips -= 1;
+      continue;
+    }
+    return { inner: w, consumed: i, assignments };
+  }
+  return null;
+}
+
 class ShellParser {
   readonly commands: ParsedCommand[] = [];
 
@@ -788,9 +957,8 @@ class ShellParser {
       envWords.push(w);
       idx += 1;
     }
-    const execWord = words[idx];
-    const argWords = words.slice(idx + 1);
-    if (execWord === undefined) {
+    const firstWord = words[idx];
+    if (firstWord === undefined) {
       for (const w of envWords) {
         for (const s of w.subs) this.parseNested(s);
       }
@@ -800,6 +968,26 @@ class ShellParser {
       return;
     }
 
+    // 包装命令解包（D3a）：递归剥掉 sudo/env/timeout/... 前缀（规格见 WRAPPER_SPECS
+    // 顶部注释）。每轮循环 idx 严格递增（consumed ≥ 0 且内层词必然在包装词之后），
+    // 循环在词数内必然终止。
+    let execWord = firstWord;
+    const wrappers: string[] = [];
+    const wrapperWords: Word[] = [];
+    for (;;) {
+      const spec = WRAPPER_SPECS[basename(execWord.value)];
+      if (spec === undefined) break;
+      const step = scanWrapperArgs(spec, words.slice(idx + 1));
+      if (step === null) break;
+      wrappers.push(basename(execWord.value));
+      Object.assign(env, step.assignments);
+      // 包装词与被剥掉的参数词不消失：保留进 subs 递归清单（如 sudo -u $(id) rm）
+      wrapperWords.push(...words.slice(idx, idx + 1 + step.consumed));
+      idx += 1 + step.consumed;
+      execWord = step.inner;
+    }
+
+    const argWords = words.slice(idx + 1);
     const executable = execWord.value;
     const args = argWords.map((w) => w.value);
     let indirect = execWord.hasExpansion || execWord.hasSubstitution;
@@ -827,9 +1015,11 @@ class ShellParser {
       redirects: buildRedirects(redirects),
       env,
       indirect,
+      // 多层包装按剥壳顺序以 ">" 连接（如 "sudo>timeout"），审计溯源用
+      ...(wrappers.length > 0 ? { wrapper: wrappers.join(">") } : {}),
     });
 
-    for (const w of [...envWords, execWord, ...argWords]) {
+    for (const w of [...envWords, ...wrapperWords, execWord, ...argWords]) {
       for (const s of w.subs) this.parseNested(s);
     }
     for (const r of redirects) {

@@ -42,6 +42,8 @@ const KNOWN_MATCH_KEYS = new Set([
   "flags_any",
   "args_regex",
   "target_guarded",
+  "destructive_find",
+  "stdin_from",
   "any",
 ]);
 
@@ -184,6 +186,15 @@ function parseMatch(value: Json | undefined, where: string, depth: number): Rule
     }
     match.target_guarded = obj.target_guarded;
   }
+  if (obj.destructive_find !== undefined) {
+    if (typeof obj.destructive_find !== "boolean") {
+      fail(`${where}.destructive_find`, "必须是布尔值");
+    }
+    match.destructive_find = obj.destructive_find;
+  }
+  if (obj.stdin_from !== undefined) {
+    match.stdin_from = requireStringList(obj.stdin_from, `${where}.stdin_from`);
+  }
   if (obj.any !== undefined) {
     if (depth > 0) fail(`${where}.any`, "any 不允许嵌套");
     if (!Array.isArray(obj.any) || obj.any.length === 0) {
@@ -201,6 +212,8 @@ function parseMatch(value: Json | undefined, where: string, depth: number): Rule
     (match.flags_any !== undefined && Object.keys(match.flags_any).length > 0) ||
     (match.args_regex !== undefined && match.args_regex.length > 0) ||
     match.target_guarded === true ||
+    match.destructive_find === true ||
+    (match.stdin_from !== undefined && match.stdin_from.length > 0) ||
     (match.any !== undefined && match.any.length > 0);
   if (!hasClause) fail(where, "match 至少要有一个匹配子句");
 

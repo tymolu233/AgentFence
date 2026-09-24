@@ -10,8 +10,10 @@
   match:
     tool: shell
     argv0: [mysql, mariadb, mysqlsh, psql, sqlcmd, clickhouse-client] # 字段路由：只对 SQL 客户端判内联语句
-    args_regex: # 对单条位置参数（内联 SQL）的有界正则；token 边界防 echo 误伤
-      - '/\bDROP\s+DATABASE\b/i'
+    args_regex: # 对单条位置参数（内联 SQL）的有界正则；token 边界防 echo 误伤；
+      # 词间间隔容忍块注释（DROP/ ** /DATABASE 规避，语料 byp-sql-comment-trick）：
+      # [\s/]+ 吃首段空白与斜杠，其后 ≤4 段 \*注释体(≤200 字符,不含 *)\*/，正则保持有界
+      - '/\bDROP[\s/]+(?:\*[^*]{0,200}\*/[\s/]*){0,4}DATABASE\b/i'
   refs:
     - "https://github.com/roboticforce/agent-guardrails (MIT) — scripts/database-guard.sh"
     - "https://github.com/roboticforce/agent-guardrails (MIT) — policies/databases.md"
@@ -19,6 +21,8 @@
     deny:
       - "mysql -e 'DROP DATABASE shop'"
       - "psql -c \"drop database prod\""
+      - "psql -c 'DROP/**/DATABASE shop'" # 块注释切分关键字
+      - "mysql -e 'DROP /*bait*/ DATABASE shop'"
     allow:
       - "mysql -e 'CREATE DATABASE shop'"
       - "psql -c 'SELECT 1'"
@@ -33,7 +37,7 @@
     tool: shell
     argv0: [mysql, mariadb, mysqlsh, psql, sqlcmd, clickhouse-client]
     args_regex:
-      - '/\bDROP\s+TABLE\b/i'
+      - '/\bDROP[\s/]+(?:\*[^*]{0,200}\*/[\s/]*){0,4}TABLE\b/i'
   refs:
     - "https://github.com/roboticforce/agent-guardrails (MIT) — scripts/database-guard.sh"
     - "https://github.com/roboticforce/agent-guardrails (MIT) — policies/databases.md"
@@ -41,6 +45,7 @@
     deny:
       - "psql -c 'DROP TABLE users'"
       - "mysql -e \"drop table orders\""
+      - "psql -c 'DROP/**/TABLE users'" # 块注释切分关键字
     allow:
       - "psql -c 'SELECT * FROM users'"
       - "mysql -e 'CREATE TABLE t (id INT)'"
@@ -54,7 +59,7 @@
     tool: shell
     argv0: [psql, sqlcmd] # PG / SQL Server
     args_regex:
-      - '/\bDROP\s+SCHEMA\b/i'
+      - '/\bDROP[\s/]+(?:\*[^*]{0,200}\*/[\s/]*){0,4}SCHEMA\b/i'
   refs:
     - "https://github.com/roboticforce/agent-guardrails (MIT) — scripts/database-guard.sh"
     - "https://github.com/roboticforce/agent-guardrails (MIT) — policies/databases.md"
@@ -62,6 +67,7 @@
     deny:
       - "psql -c 'DROP SCHEMA public CASCADE'"
       - "sqlcmd -Q \"drop schema dbo\""
+      - "sqlcmd -Q 'DROP/*x*/SCHEMA dbo'" # 块注释切分关键字
     allow:
       - "psql -c 'CREATE SCHEMA analytics'"
 
@@ -95,8 +101,8 @@
     tool: shell
     argv0: [mysql, mariadb, mysqlsh, psql, sqlcmd, clickhouse-client]
     args_regex:
-      - '/\bDELETE\s+FROM\b(?:(?!\bWHERE\b)[\s\S])*$/i' # 完全无 WHERE
-      - '/\bWHERE\s+(0?1\s*=\s*0?1|TRUE)\b/i' # 恒真条件
+      - '/\bDELETE[\s/]+(?:\*[^*]{0,200}\*/[\s/]*){0,4}FROM\b(?:(?!\bWHERE\b)[\s\S])*$/i' # 完全无 WHERE（词间容忍块注释）
+      - '/\bWHERE[\s/]+(?:\*[^*]{0,200}\*/[\s/]*){0,4}(0?1\s*=\s*0?1|TRUE)\b/i' # 恒真条件（同上）
   refs:
     - "https://github.com/roboticforce/agent-guardrails (MIT) — scripts/database-guard.sh"
     - "https://github.com/roboticforce/agent-guardrails (MIT) — policies/databases.md"
@@ -104,6 +110,8 @@
     deny:
       - "psql -c 'DELETE FROM sessions WHERE 1=1'"
       - "psql -c 'DELETE FROM sessions'"
+      - "psql -c 'DELETE/**/FROM sessions'" # 块注释切分关键字
+      - "mysql -e 'DELETE FROM sessions WHERE/**/1=1'"
     allow:
       - "psql -c 'DELETE FROM sessions WHERE id = 7'"
       - "mysql -e 'DELETE FROM t WHERE expired = 1 LIMIT 100'"

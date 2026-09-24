@@ -340,3 +340,235 @@ describe("边界", () => {
     expect(shell.commands[0]?.executable).toBe("rm");
   });
 });
+
+describe("包装命令解包（D3a）：包装器 × {正常 / 危险 / 无参数边界 / 多层嵌套}", () => {
+  function expectParsed(input: string, executable: string, args: string[]): ParsedCommand {
+    const cmd = first(input);
+    expect(cmd.executable).toBe(executable);
+    expect(cmd.args).toEqual(args);
+    return cmd;
+  }
+
+  /** 不解包语义：executable/args 原样、wrapper 缺省 */
+  function expectKept(input: string, executable: string, args: string[]): ParsedCommand {
+    const cmd = expectParsed(input, executable, args);
+    expect(cmd.wrapper).toBeUndefined();
+    return cmd;
+  }
+
+  describe("sudo", () => {
+    it("正常命令：sudo ls /tmp，wrapper 溯源", () => {
+      const cmd = expectParsed("sudo ls /tmp", "ls", ["/tmp"]);
+      expect(cmd.wrapper).toBe("sudo");
+    });
+    it("危险命令：sudo rm -rf / → executable 必须是 rm（验收锚点）", () => {
+      const cmd = expectParsed("sudo rm -rf /", "rm", ["-rf", "/"]);
+      expect(cmd.wrapper).toBe("sudo");
+      expect(cmd.indirect).toBe(false);
+    });
+    it("无参数边界：裸 sudo 不解包，不是错误", () => {
+      expectKept("sudo", "sudo", []);
+    });
+    it("flag 跳过：-u root / --user[=root] / -E / -- 终止符", () => {
+      expectParsed("sudo -u root -E ls", "ls", []);
+      expectParsed("sudo --user=root rm -rf /", "rm", ["-rf", "/"]);
+      expectParsed("sudo --user root ls", "ls", []);
+      expectParsed("sudo -- ls", "ls", []);
+    });
+    it("VAR=x 前缀并入 env 字段", () => {
+      const cmd = expectParsed("sudo FOO=bar ls", "ls", []);
+      expect(cmd.env).toEqual({ FOO: "bar" });
+      expect(cmd.wrapper).toBe("sudo");
+    });
+    it("多层嵌套：sudo env -i rm -rf /，wrapper 按剥链 join", () => {
+      const cmd = expectParsed("sudo env -i rm -rf /", "rm", ["-rf", "/"]);
+      expect(cmd.wrapper).toBe("sudo>env");
+    });
+  });
+
+  describe("env", () => {
+    it("正常命令：env ls", () => {
+      expectParsed("env ls", "ls", []);
+    });
+    it("危险命令：env rm -rf /", () => {
+      const cmd = expectParsed("env rm -rf /", "rm", ["-rf", "/"]);
+      expect(cmd.wrapper).toBe("env");
+    });
+    it("无参数边界：裸 env 不解包（env | sort 语义不变）", () => {
+      expectKept("env", "env", []);
+      const shell = parseOk("env | sort");
+      expect(shell.commands[0]?.executable).toBe("env");
+      expect(shell.commands[0]?.wrapper).toBeUndefined();
+    });
+    it("VAR=x 前缀按现行语义进 env 字段（含 -i）", () => {
+      const cmd = expectParsed("env -i FOO=bar rm -rf /", "rm", ["-rf", "/"]);
+      expect(cmd.env).toEqual({ FOO: "bar" });
+    });
+    it("flag 跳过：-u NAME / -- 终止符", () => {
+      expectParsed("env -u FOO ls", "ls", []);
+      expectParsed("env -- ls", "ls", []);
+    });
+    it("多层嵌套：env sudo -E rm -rf /", () => {
+      const cmd = expectParsed("env sudo -E rm -rf /", "rm", ["-rf", "/"]);
+      expect(cmd.wrapper).toBe("env>sudo");
+    });
+  });
+
+  describe("timeout", () => {
+    it("正常命令：timeout 5 ls", () => {
+      expectParsed("timeout 5 ls", "ls", []);
+    });
+    it("危险命令：timeout 5 rm -rf /", () => {
+      const cmd = expectParsed("timeout 5 rm -rf /", "rm", ["-rf", "/"]);
+      expect(cmd.wrapper).toBe("timeout");
+    });
+    it("无参数边界：裸 timeout / 只有 DURATION 不解包", () => {
+      expectKept("timeout", "timeout", []);
+      expectKept("timeout 5", "timeout", ["5"]);
+    });
+    it("flag 跳过：-s KILL / --signal=KILL / 连写 -sKILL 与 -k", () => {
+      expectParsed("timeout -s KILL 5 rm -rf /", "rm", ["-rf", "/"]);
+      expectParsed("timeout --signal=KILL 5 ls", "ls", []);
+      expectParsed("timeout -sKILL -k 1 5 ls", "ls", []);
+    });
+    it("多层嵌套：timeout 5 sudo rm -rf /", () => {
+      const cmd = expectParsed("timeout 5 sudo rm -rf /", "rm", ["-rf", "/"]);
+      expect(cmd.wrapper).toBe("timeout>sudo");
+    });
+  });
+
+  describe("nice", () => {
+    it("正常命令：nice ls", () => {
+      expectParsed("nice ls", "ls", []);
+    });
+    it("危险命令：nice rm -rf /", () => {
+      const cmd = expectParsed("nice rm -rf /", "rm", ["-rf", "/"]);
+      expect(cmd.wrapper).toBe("nice");
+    });
+    it("无参数边界：裸 nice 不解包", () => {
+      expectKept("nice", "nice", []);
+    });
+    it("flag 跳过：-n 5 / 连写 -n5 / 老式 -5 / --adjustment=5", () => {
+      expectParsed("nice -n 5 rm -rf /", "rm", ["-rf", "/"]);
+      expectParsed("nice -n5 ls", "ls", []);
+      expectParsed("nice -5 ls", "ls", []);
+      expectParsed("nice --adjustment=5 ls", "ls", []);
+    });
+    it("多层嵌套：nice -n 5 env rm -rf /", () => {
+      const cmd = expectParsed("nice -n 5 env rm -rf /", "rm", ["-rf", "/"]);
+      expect(cmd.wrapper).toBe("nice>env");
+    });
+  });
+
+  describe("nohup", () => {
+    it("正常命令：nohup ls", () => {
+      expectParsed("nohup ls", "ls", []);
+    });
+    it("危险命令：nohup rm -rf /", () => {
+      const cmd = expectParsed("nohup rm -rf /", "rm", ["-rf", "/"]);
+      expect(cmd.wrapper).toBe("nohup");
+    });
+    it("无参数边界：裸 nohup / --help（无执行语义）不解包", () => {
+      expectKept("nohup", "nohup", []);
+      expectKept("nohup --help", "nohup", ["--help"]);
+    });
+    it("多层嵌套：nohup sudo rm -rf /", () => {
+      const cmd = expectParsed("nohup sudo rm -rf /", "rm", ["-rf", "/"]);
+      expect(cmd.wrapper).toBe("nohup>sudo");
+    });
+  });
+
+  describe("stdbuf", () => {
+    it("正常命令：stdbuf -o0 ls", () => {
+      expectParsed("stdbuf -o0 ls", "ls", []);
+    });
+    it("危险命令：stdbuf -o0 rm -rf /", () => {
+      const cmd = expectParsed("stdbuf -o0 rm -rf /", "rm", ["-rf", "/"]);
+      expect(cmd.wrapper).toBe("stdbuf");
+    });
+    it("无参数边界：裸 stdbuf 不解包", () => {
+      expectKept("stdbuf", "stdbuf", []);
+    });
+    it("flag 跳过：值分离 -o 0 / -e L / --output=0", () => {
+      expectParsed("stdbuf -o 0 -e L rm -rf /", "rm", ["-rf", "/"]);
+      expectParsed("stdbuf --output=0 ls", "ls", []);
+    });
+    it("多层嵌套：stdbuf -o0 timeout 5 rm -rf /", () => {
+      const cmd = expectParsed("stdbuf -o0 timeout 5 rm -rf /", "rm", ["-rf", "/"]);
+      expect(cmd.wrapper).toBe("stdbuf>timeout");
+    });
+  });
+
+  describe("command / builtin（shell 内建前缀）", () => {
+    it("正常命令：command ls / builtin echo hi", () => {
+      expectParsed("command ls", "ls", []);
+      expectParsed("builtin echo hi", "echo", ["hi"]);
+    });
+    it("危险命令：command rm -rf / / builtin rm -rf /", () => {
+      expectParsed("command rm -rf /", "rm", ["-rf", "/"]);
+      const cmd = expectParsed("builtin rm -rf /", "rm", ["-rf", "/"]);
+      expect(cmd.wrapper).toBe("builtin");
+    });
+    it("无参数边界：裸 command / 裸 builtin 不解包", () => {
+      expectKept("command", "command", []);
+      expectKept("builtin", "builtin", []);
+    });
+    it("command -p 跳过；-v/-V 只查路径不执行 → 保持不解包", () => {
+      expectParsed("command -p rm -rf /", "rm", ["-rf", "/"]);
+      expectKept("command -v rm", "command", ["-v", "rm"]);
+    });
+    it("多层嵌套：builtin command echo hi", () => {
+      const cmd = expectParsed("builtin command echo hi", "echo", ["hi"]);
+      expect(cmd.wrapper).toBe("builtin>command");
+    });
+  });
+
+  describe("解包不吞间接执行信号与其它不变量", () => {
+    it("sudo bash -c 解包后内层是 bash -c，indirect 必须仍为 true", () => {
+      const shell = parseOk("sudo bash -c 'rm -rf /'");
+      expect(shell.commands).toHaveLength(2);
+      expect(shell.commands[0]?.executable).toBe("bash");
+      expect(shell.commands[0]?.indirect).toBe(true);
+      expect(shell.commands[0]?.wrapper).toBe("sudo");
+      expect(shell.commands[1]?.executable).toBe("rm");
+      expect(shell.commands[1]?.args).toEqual(["-rf", "/"]);
+    });
+    it("sudo -E sh -c 同样保持 indirect 与载荷递归", () => {
+      const shell = parseOk("sudo -E sh -c 'id'");
+      expect(shell.commands[0]?.executable).toBe("sh");
+      expect(shell.commands[0]?.indirect).toBe(true);
+      expect(shell.commands[1]?.executable).toBe("id");
+    });
+    it("sudo $CMD：内层是展开词，indirect 与 wrapper 共存", () => {
+      const cmd = first("sudo $CMD");
+      expect(cmd.executable).toBe("$CMD");
+      expect(cmd.indirect).toBe(true);
+      expect(cmd.wrapper).toBe("sudo");
+    });
+    it("包装器被剥掉的参数仍可递归看见：sudo -u $(id) rm -rf /", () => {
+      const shell = parseOk("sudo -u $(id) rm -rf /");
+      expect(shell.commands[0]?.executable).toBe("rm");
+      expect(shell.commands[0]?.wrapper).toBe("sudo");
+      expect(shell.commands[1]?.executable).toBe("id");
+    });
+    it("行首赋值 × 包装器赋值 × env 赋值三段共存", () => {
+      const cmd = first("A=1 sudo B=2 env C=3 rm -rf /");
+      expect(cmd.executable).toBe("rm");
+      expect(cmd.args).toEqual(["-rf", "/"]);
+      expect(cmd.env).toEqual({ A: "1", B: "2", C: "3" });
+      expect(cmd.wrapper).toBe("sudo>env");
+    });
+    it("&& 切分后各子命令各自解包", () => {
+      const shell = parseOk("cd /tmp && sudo rm -rf /");
+      expect(shell.commands[0]?.executable).toBe("cd");
+      expect(shell.commands[1]?.executable).toBe("rm");
+      expect(shell.commands[1]?.wrapper).toBe("sudo");
+    });
+    it("放弃语义保持原样：sudo -s/-i/-e、未知长 flag、env -S", () => {
+      expectKept("sudo -i id", "sudo", ["-i", "id"]);
+      expectKept("sudo -e /etc/fstab", "sudo", ["-e", "/etc/fstab"]);
+      expectKept("sudo --frobnicate ls", "sudo", ["--frobnicate", "ls"]);
+      expectKept("env -S 'rm -rf /'", "env", ["-S", "rm -rf /"]);
+    });
+  });
+});

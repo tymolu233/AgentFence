@@ -4,7 +4,8 @@
  *
  * 匹配原语（单条子命令维度，AND 语义，any 为 OR）：
  *   argv0 / argv0_regex / subcommand(glob) / flags / flags_any /
- *   args_regex（有界正则 + 长度截断）/ target_guarded（语义谓词）。
+ *   args_regex（有界正则 + 长度截断）/ target_guarded（语义谓词）/
+ *   destructive_find（语义谓词）/ stdin_from（跨子命令前缀近似谓词）。
  * 仲裁：显式 priority（小者先判）+ deny-overrides（多规则命中取最重，
  * DENY > REVIEW，同级 severity 大者定 risk）。
  */
@@ -44,6 +45,28 @@ const FLAG_ALIASES: Record<string, string> = {
 
 /** 语义谓词 target_guarded 守卫的字面目标（trailing slash 归一后比较） */
 const GUARDED_LITERALS = new Set(["/", ".", "..", "~", "$home", "${home}", "%userprofile%"]);
+
+/** target_guarded 守卫的系统目录（路径前缀语义：目录本身及其子路径均命中） */
+const GUARDED_SYSTEM_DIRS = [
+  "/etc",
+  "/usr",
+  "/bin",
+  "/sbin",
+  "/var",
+  "/boot",
+  "/lib",
+  "/lib64",
+  "/opt",
+];
+
+/** 裸 glob（*、** 等纯通配）：作为删除目标时等价于当前目录整体 */
+const BARE_GLOB = /^\*+$/;
+
+/** Windows 盘符根（尾斜杠已归一）：C:\ / C:/ / c: */
+const DRIVE_ROOT = /^[a-z]:$/;
+
+/** Git Bash/MSYS 风格盘符根：/c /d ... */
+const POSIX_DRIVE_ROOT = /^\/[a-z]$/;
 
 export interface MatchedRule {
   id: string;
@@ -210,10 +233,42 @@ export function isGuardedTarget(raw: string): boolean {
     if (stripped === token) break;
     token = stripped === "" ? "/" : stripped;
   }
-  return GUARDED_LITERALS.has(token.toLowerCase());
+  const lower = token.toLowerCase();
+  if (GUARDED_LITERALS.has(lower)) return true;
+  // 裸 * glob（含 ./*，后者归一到 "." 已在字面表内命中）
+  if (BARE_GLOB.test(token)) return true;
+  // Windows / MSYS 盘符根
+  if (DRIVE_ROOT.test(lower) || POSIX_DRIVE_ROOT.test(lower)) return true;
+  // 系统目录：前缀语义（"/etcx" 不命中，"/etc" 与 "/etc/nginx" 命中）
+  return GUARDED_SYSTEM_DIRS.some((dir) => lower === dir || lower.startsWith(`${dir}/`));
 }
 
-function commandMatches(match: RuleMatch, argv0: string, lexed: LexedArgs): boolean {
+/**
+ * destructive_find 语义谓词：find 的删除语义（-delete，或 -exec/-execdir 直调 rm），
+ * 与 rm -rf 同效。作用于未词法化的原始 argv——`-delete` 这类 find 单横线谓词
+ * 进入 lexArgs 会被逐字母拆成短 flag，词法化后的表象无法表达该语义。
+ */
+function isDestructiveFind(argv0: string, args: readonly string[]): boolean {
+  if (argv0 !== "find") return false;
+  for (let i = 0; i < args.length; i += 1) {
+    const token = args[i];
+    if (token === "-delete") return true;
+    if (
+      (token === "-exec" || token === "-execdir") &&
+      normalizeArgv0(args[i + 1] ?? "") === "rm"
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function commandMatches(
+  match: RuleMatch,
+  argv0: string,
+  lexed: LexedArgs,
+  rawArgs: readonly string[],
+): boolean {
   if (match.argv0 !== undefined && !match.argv0.includes(argv0)) return false;
   if (match.argv0_regex !== undefined && !compileLiteral(match.argv0_regex).test(argv0)) {
     return false;
@@ -231,10 +286,38 @@ function commandMatches(match: RuleMatch, argv0: string, lexed: LexedArgs): bool
   if (match.target_guarded === true && !lexed.positionals.some(isGuardedTarget)) {
     return false;
   }
+  if (match.destructive_find === true && !isDestructiveFind(argv0, rawArgs)) {
+    return false;
+  }
   if (match.any !== undefined) {
-    return match.any.some((sub) => commandMatches(sub, argv0, lexed));
+    return match.any.some((sub) => commandMatches(sub, argv0, lexed, rawArgs));
   }
   return true;
+}
+
+/**
+ * stdin_from 跨子命令谓词：近似表达"shell 的 stdin 来自 curl/wget 的输出"。
+ * ParsedShell 只保留子命令顺序、不保留管道连接关系，故语义取前缀近似：
+ * 命中子命令必须是不带任何 argv 的裸解释器（载荷经 stdin 喂入、argv 不可见），
+ * 且同条输入中存在更早的子命令其 argv0 属于 stdin_from 列表。
+ * （注意与 `wget x.sh && bash x.sh` 区分：后者 argv 可见、载荷在盘上，不命中。）
+ */
+function matchStdinFrom(
+  sources: readonly string[] | undefined,
+  commands: readonly ParsedCommand[],
+  index: number,
+): boolean {
+  if (sources === undefined) return true;
+  const candidate = commands[index];
+  if (candidate === undefined || candidate.args.length > 0) return false;
+  const wanted = new Set(sources.map((s) => s.toLowerCase()));
+  for (let j = 0; j < index; j += 1) {
+    const upstream = commands[j];
+    if (upstream !== undefined && wanted.has(normalizeArgv0(upstream.executable))) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function matchToolField(tool: string | string[] | undefined, call: ToolCall): boolean {
@@ -246,9 +329,15 @@ function matchToolField(tool: string | string[] | undefined, call: ToolCall): bo
   return wanted.some((name) => candidates.has(name.toLowerCase()));
 }
 
-/** 单条规则对单个子命令的判定（不含 tool 字段路由，路由在 call 层做） */
+/**
+ * 单条规则对单个子命令的判定（不含 tool 字段路由，路由在 call 层做）。
+ * stdin_from 在孤立单命令视角下无从满足（没有更早的上游子命令）。
+ */
 export function matchRuleAgainstCommand(rule: Rule, cmd: ParsedCommand): boolean {
-  return commandMatches(rule.match, normalizeArgv0(cmd.executable), lexArgs(cmd.args));
+  return (
+    commandMatches(rule.match, normalizeArgv0(cmd.executable), lexArgs(cmd.args), cmd.args) &&
+    matchStdinFrom(rule.match.stdin_from, [cmd], 0)
+  );
 }
 
 function hasCommandClauses(match: RuleMatch): boolean {
@@ -260,6 +349,8 @@ function hasCommandClauses(match: RuleMatch): boolean {
     match.flags_any !== undefined ||
     match.args_regex !== undefined ||
     match.target_guarded === true ||
+    match.destructive_find === true ||
+    match.stdin_from !== undefined ||
     match.any !== undefined
   );
 }
@@ -271,11 +362,15 @@ export function matchRuleAgainstCall(
   parsed?: ParsedShell,
 ): number | null {
   if (!matchToolField(rule.match.tool, call)) return null;
-  if (!hasCommandClauses(rule.match)) return 0; // 纯 tool 路由规则（如 network/credentials 类目）
+  if (!hasCommandClauses(rule.match)) return 0; // 纯 tool 路由规则（如 credentials 类目）
   const commands = parsed?.commands ?? [];
   for (let i = 0; i < commands.length; i++) {
     const cmd = commands[i];
-    if (cmd && commandMatches(rule.match, normalizeArgv0(cmd.executable), lexArgs(cmd.args))) {
+    if (
+      cmd &&
+      commandMatches(rule.match, normalizeArgv0(cmd.executable), lexArgs(cmd.args), cmd.args) &&
+      matchStdinFrom(rule.match.stdin_from, commands, i)
+    ) {
       return i;
     }
   }

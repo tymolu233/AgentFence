@@ -8,9 +8,9 @@ const RULES_DIR = fileURLToPath(new URL("../../rules/", import.meta.url));
 const rules = loadRules(RULES_DIR);
 
 describe("内置规则库（rules/*.yaml）", () => {
-  it("加载 40 条规则，id 唯一，按 priority 升序", () => {
-    expect(rules).toHaveLength(40);
-    expect(new Set(rules.map((r) => r.id)).size).toBe(40);
+  it("加载 43 条规则，id 唯一，按 priority 升序", () => {
+    expect(rules).toHaveLength(43);
+    expect(new Set(rules.map((r) => r.id)).size).toBe(43);
     for (let i = 1; i < rules.length; i++) {
       const prev = rules[i - 1];
       const curr = rules[i];
@@ -18,9 +18,9 @@ describe("内置规则库（rules/*.yaml）", () => {
     }
   });
 
-  it("覆盖首批 7 个类目", () => {
+  it("覆盖 8 个类目", () => {
     const categories = new Set<string>(rules.map((r) => r.category));
-    for (const c of ["shell", "filesystem", "database", "cloud", "kubernetes", "git", "iac"]) {
+    for (const c of ["shell", "filesystem", "database", "cloud", "kubernetes", "git", "iac", "network"]) {
       expect(categories.has(c), `缺少类目 ${c}`).toBe(true);
     }
   });

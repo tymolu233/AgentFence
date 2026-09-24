@@ -104,19 +104,8 @@ function loadAdversarial(file: string): AdversarialEntry[] {
 // 每条给出根因；条目开始满足 expect 时套件会变红，提示从此清单移除。
 // ---------------------------------------------------------------------------
 const KNOWN_MISSES: Readonly<Record<string, string>> = {
-  "byp-cd-then-rm-star": "守卫词表仅覆盖 / ~ . .. 等字面，裸 * 未归一为守卫目标",
-  "byp-base64-pipe-sh": "parser 已标 indirect，但匹配层没有 indirect 兜底规则",
-  "byp-heredoc-sh": "heredoc 载荷在重定向内，不进 token 流；sh 无 -c 不标 indirect",
-  "byp-xargs-sh": "xargs 间接执行载荷不可见；无 indirect 兜底规则",
-  "byp-var-indirect": "变量不求值是 parser 契约；无 indirect 兜底规则",
-  "byp-write-then-run": "写文件再执行的跨命令关联未见；无 indirect 兜底规则",
-  "byp-make-destroy": "配置外置（A6-5 自承认盲区）：Makefile 语义不在命令字符串里",
-  "byp-pipe-remote-sh": "network 类目规则空缺；curl 管道进 sh 无 direct 命中",
-  "byp-find-delete": "等效命令缺口：find -delete 与 rm -rf 同效应，无对应规则",
-  "byp-sql-comment-trick": "args_regex 的 \\s+ 无法消化 SQL 注释切分（ADB25 风格的词法规避）",
-  "byp-sudo-rm": "包装命令（sudo/env）未展开，argv0 路由不到 rm",
-  "byp-rm-etc": "守卫词表覆盖缺口：仅 / ~ . .. $HOME 等，/etc /usr 等系统目录未守卫",
-  "byp-curl-delete-api": "network 类目规则空缺：直接 HTTP DELETE 云厂商 API 无规则",
+  "byp-heredoc-sh": "heredoc 载荷在重定向内，不进 token 流；sh 无 -c 不标 indirect（待 parser：redirects.stdin 存在即标 indirect）",
+  "byp-make-destroy": "配置外置（A6-5 自承认盲区）：Makefile 语义不在命令字符串里；属环境维度信号，规则层之外",
 };
 
 // ---------------------------------------------------------------------------

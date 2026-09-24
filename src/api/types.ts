@@ -91,6 +91,12 @@ export interface ParsedCommand {
   env: Record<string, string>;
   /** eval / bash -c / base64 解码执行 / 写文件再执行等间接执行迹象 */
   indirect: boolean;
+  /**
+   * 解包时被剥掉的包装命令（sudo / env / timeout / nice / nohup / stdbuf /
+   * command / builtin），审计溯源用；无包装时缺省。
+   * 多层包装按剥壳顺序以 ">" 连接（如 "sudo>timeout"）。
+   */
+  wrapper?: string;
 }
 
 /** 一条 shell 输入按 && ; | 子 shell 切分后的全部子命令 */
