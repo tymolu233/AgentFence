@@ -1,0 +1,245 @@
+# AgentFence 良性语料（误拦回归门禁）
+#
+# 每条都是谨慎的资深工程师在日常开发中真的会执行的命令。门禁语义：
+# 期望全部 ALLOW；DENY = 0 是硬门禁；REVIEW 允许但会计数并逐条上报。
+# 含敏感词的"误拦陷阱"另见 adversarial.yaml 的 trap-* 分组。
+#
+# 评审约定：新增条目必须先自问"这条命令我敢不假思索按回车吗？"
+# 拿不准即不收录——语料宁精勿滥，质量优先于条数。
+
+# ---- git 日常（含合法 force-with-lease 到个人分支） ----
+- { cmd: "git status", comment: "查看工作区状态" }
+- { cmd: "git status -sb", comment: "紧凑状态输出" }
+- { cmd: "git diff", comment: "未暂存改动" }
+- { cmd: "git diff --staged", comment: "已暂存改动" }
+- { cmd: "git diff HEAD~1 -- src/engine", comment: "与上一提交对比某目录" }
+- { cmd: "git log --oneline -20", comment: "最近 20 条提交" }
+- { cmd: "git log --graph --all --decorate", comment: "分支图" }
+- { cmd: "git show HEAD~2 --stat", comment: "查看历史提交" }
+- { cmd: "git add .", comment: "暂存全部改动" }
+- { cmd: "git add -p", comment: "交互式暂存" }
+- { cmd: "git commit -m \"feat(engine): add acl layer\"", comment: "常规提交" }
+- { cmd: "git commit --amend --no-edit", comment: "修订本地未推送提交" }
+- { cmd: "git branch --show-current", comment: "当前分支名" }
+- { cmd: "git branch feature-parser-flags", comment: "建分支" }
+- { cmd: "git checkout -b feature-parser-flags", comment: "建并切换分支" }
+- { cmd: "git checkout main", comment: "切回主干" }
+- { cmd: "git switch main" }
+- { cmd: "git switch -c bugfix-audit-flush" }
+- { cmd: "git pull --rebase", comment: "rebase 方式同步" }
+- { cmd: "git pull origin main" }
+- { cmd: "git fetch origin" }
+- { cmd: "git fetch --all --prune", comment: "清理远端已删分支引用" }
+- { cmd: "git merge --no-ff feature-parser-flags", comment: "保留合并提交" }
+- { cmd: "git merge --abort", comment: "中止冲突中的合并" }
+- { cmd: "git rebase main" }
+- { cmd: "git rebase -i HEAD~3", comment: "交互式整理提交" }
+- { cmd: "git rebase --continue" }
+- { cmd: "git stash push -m \"wip\"", comment: "暂存工作现场" }
+- { cmd: "git stash pop" }
+- { cmd: "git push origin main" }
+- { cmd: "git push -u origin feature-parser-flags", comment: "首次推送个人分支" }
+- { cmd: "git push --force-with-lease origin bugfix-audit-flush", comment: "个人分支安全 force push（规则明确放行非受保护分支）" }
+- { cmd: "git tag -a v0.1.0 -m \"release v0.1.0\"", comment: "打发布标签" }
+- { cmd: "git cherry-pick 9f3a2c1" }
+- { cmd: "git revert HEAD --no-edit", comment: "反做提交（可逆）" }
+- { cmd: "git remote -v" }
+- { cmd: "git blame -L 10,30 src/engine/engine.ts" }
+- { cmd: "git restore --staged src/app.ts", comment: "仅取消暂存单文件" }
+- { cmd: "git shortlog -sn" }
+- { cmd: "git diff --name-only origin/main...HEAD" }
+
+# ---- 包管理（npm / pnpm / yarn / pip） ----
+- { cmd: "npm install" }
+- { cmd: "npm install zod" }
+- { cmd: "npm install --save-dev vitest" }
+- { cmd: "npm run build" }
+- { cmd: "npm test" }
+- { cmd: "npm run lint" }
+- { cmd: "npm ci", comment: "CI 式干净安装" }
+- { cmd: "npm outdated" }
+- { cmd: "npm ls react" }
+- { cmd: "npx tsc --noEmit" }
+- { cmd: "pnpm add zod" }
+- { cmd: "pnpm add -D @types/node" }
+- { cmd: "pnpm dev" }
+- { cmd: "pnpm -r build", comment: "monorepo 全量构建" }
+- { cmd: "pnpm why lodash" }
+- { cmd: "yarn add axios" }
+- { cmd: "yarn test" }
+- { cmd: "yarn workspace web build" }
+- { cmd: "pip install requests" }
+- { cmd: "pip install -r requirements.txt" }
+- { cmd: "pip install -e .", comment: "开发模式安装本地包" }
+- { cmd: "pip list" }
+- { cmd: "pip show numpy" }
+- { cmd: "python -m venv .venv" }
+- { cmd: "python -m pip install --upgrade pip" }
+- { cmd: "pip freeze > requirements.txt", comment: "回写依赖清单" }
+
+# ---- 构建与测试 ----
+- { cmd: "make" }
+- { cmd: "make test" }
+- { cmd: "make build" }
+- { cmd: "tsc --noEmit" }
+- { cmd: "tsc -b packages/core" }
+- { cmd: "npx vitest run" }
+- { cmd: "npx vitest run --coverage" }
+- { cmd: "npx vitest related src/engine/engine.ts" }
+- { cmd: "pytest" }
+- { cmd: "pytest -x -q" }
+- { cmd: "pytest tests/test_auth.py -k \"login\"" }
+- { cmd: "python -m pytest --junitxml=report.xml" }
+- { cmd: "go build ./..." }
+- { cmd: "go test ./..." }
+- { cmd: "go test -race ./internal/..." }
+- { cmd: "go vet ./..." }
+- { cmd: "gofmt -l ." }
+- { cmd: "cargo build" }
+- { cmd: "cargo build --release" }
+- { cmd: "cargo test" }
+- { cmd: "cargo check" }
+- { cmd: "cargo clippy --all-targets" }
+- { cmd: "cargo fmt --check" }
+- { cmd: "mvn -q compile" }
+- { cmd: "mvn test -DskipITs" }
+- { cmd: "./gradlew build" }
+- { cmd: "npx eslint ." }
+- { cmd: "npx prettier --check ." }
+- { cmd: "ruff check ." }
+- { cmd: "mypy src" }
+- { cmd: "cmake --build build -j4" }
+- { cmd: "ctest --test-dir build" }
+
+# ---- 容器常规（无系统级清理） ----
+- { cmd: "docker build -t app:dev ." }
+- { cmd: "docker ps" }
+- { cmd: "docker ps -a" }
+- { cmd: "docker logs api" }
+- { cmd: "docker logs --tail 100 web" }
+- { cmd: "docker logs -f worker" }
+- { cmd: "docker compose up -d" }
+- { cmd: "docker compose up -d --build" }
+- { cmd: "docker compose ps" }
+- { cmd: "docker compose logs -f api" }
+- { cmd: "docker compose down", comment: "停掉本项目编排，属日常收尾" }
+- { cmd: "docker images" }
+- { cmd: "docker run --rm -it alpine:3.19 sh", comment: "一次性调试容器" }
+- { cmd: "docker exec api ls /app" }
+- { cmd: "docker stats --no-stream" }
+- { cmd: "docker volume ls" }
+- { cmd: "docker network ls" }
+- { cmd: "docker pull node:22-alpine" }
+- { cmd: "docker tag app:dev registry.internal/app:v2" }
+- { cmd: "docker system prune", comment: "默认仅清悬空资源，规则测试明确放行（-a 才是 REVIEW）" }
+- { cmd: "docker inspect app_container" }
+
+# ---- 文件操作（无 -delete / 无 rm 递归） ----
+- { cmd: "ls" }
+- { cmd: "ls -la" }
+- { cmd: "ls -lh dist/" }
+- { cmd: "pwd" }
+- { cmd: "cat README.md" }
+- { cmd: "head -20 app.log" }
+- { cmd: "tail -f app.log" }
+- { cmd: "less /var/log/syslog" }
+- { cmd: "cp src/config.example.yaml src/config.yaml" }
+- { cmd: "cp -r assets dist/assets" }
+- { cmd: "mv old-name.txt new-name.txt" }
+- { cmd: "mkdir -p dist/build" }
+- { cmd: "touch src/new-module.ts" }
+- { cmd: "grep -rn \"TODO\" src/" }
+- { cmd: "grep -i error app.log" }
+- { cmd: "rg --files -g '*.ts'" }
+- { cmd: "rg \"createEngine\" -n" }
+- { cmd: "find . -name '*.log'", comment: "只查找不删除" }
+- { cmd: "find src -type d -name rules" }
+- { cmd: "find . -maxdepth 2 -name package.json" }
+- { cmd: "wc -l src/*.ts" }
+- { cmd: "du -sh ." }
+- { cmd: "df -h" }
+- { cmd: "tree -L 2" }
+- { cmd: "chmod +x scripts/check" }
+- { cmd: "chmod 644 README.md" }
+- { cmd: "ln -s ../shared/config.yaml config.yaml" }
+- { cmd: "readlink -f config.yaml" }
+- { cmd: "tar -czf backup.tar.gz src/" }
+- { cmd: "tar -xzf backup.tar.gz -C /tmp/restore" }
+- { cmd: "unzip -l release.zip" }
+- { cmd: "diff -u a.ts b.ts" }
+- { cmd: "file image.png" }
+- { cmd: "stat package-lock.json" }
+
+# ---- 只读云 / 集群查询 ----
+- { cmd: "kubectl get pods" }
+- { cmd: "kubectl get pods -A" }
+- { cmd: "kubectl get deploy -n staging" }
+- { cmd: "kubectl describe pod web-0 -n prod" }
+- { cmd: "kubectl logs api-7d9f8b-x2abc -n prod" }
+- { cmd: "kubectl logs -f --tail 200 worker-0" }
+- { cmd: "kubectl get events --sort-by=.metadata.creationTimestamp" }
+- { cmd: "kubectl top pods -n monitoring" }
+- { cmd: "kubectl rollout status deploy/api" }
+- { cmd: "kubectl config current-context" }
+- { cmd: "kubectl get nodes -o wide" }
+- { cmd: "aws s3 ls" }
+- { cmd: "aws s3 ls s3://team-artifacts/releases/" }
+- { cmd: "aws ec2 describe-instances --instance-ids i-0abc123" }
+- { cmd: "aws ec2 describe-security-groups" }
+- { cmd: "aws sts get-caller-identity" }
+- { cmd: "aws cloudformation describe-stacks --stack-name app-staging" }
+- { cmd: "aws rds describe-db-instances" }
+- { cmd: "aws logs tail /aws/lambda/worker --since 1h" }
+- { cmd: "aws eks list-clusters" }
+- { cmd: "gcloud compute instances list" }
+- { cmd: "az vm list -o table" }
+- { cmd: "az group show --name staging-rg" }
+- { cmd: "doctl compute droplet list" }
+- { cmd: "helm list -A" }
+
+# ---- 文本处理（读取性使用） ----
+- { cmd: "cat package.json | jq .version" }
+- { cmd: "jq -r '.dependencies | keys[]' package.json" }
+- { cmd: "jq -c '.[]' data.json" }
+- { cmd: "sed -n '10,20p' src/parser/shell.ts", comment: "只打印不改写" }
+- { cmd: "sed -n '/^## /p' CHANGELOG.md" }
+- { cmd: "awk '{print $1}' access.log | sort | uniq -c | sort -nr" }
+- { cmd: "awk -F: '{print $2}' data.csv" }
+- { cmd: "cut -d, -f3 data.csv" }
+- { cmd: "tr 'A-Z' 'a-z' < NAMES.txt | sort -u" }
+- { cmd: "sort users.txt | uniq -d" }
+- { cmd: "column -t data.txt" }
+- { cmd: "paste names.txt scores.txt" }
+
+# ---- 网络只读（GET / 探测） ----
+- { cmd: "curl -s https://api.github.com/repos/roboticforce/agent-guardrails" }
+- { cmd: "curl -s https://registry.npmjs.org/react | jq -r '.name'" }
+- { cmd: "curl -I https://example.com", comment: "HEAD 请求" }
+- { cmd: "curl -fsSL -o /dev/null -w '%{http_code}' https://example.com/health" }
+- { cmd: "ping -c 4 1.1.1.1" }
+- { cmd: "ping example.com" }
+- { cmd: "dig example.com" }
+- { cmd: "dig +short A example.com" }
+- { cmd: "nslookup example.com" }
+- { cmd: "host example.com" }
+
+# ---- 通用开发杂项 ----
+- { cmd: "node --version" }
+- { cmd: "node -e 'console.log(JSON.stringify({ ok: true }))'" }
+- { cmd: "node -e 'console.log(process.uptime())'" }
+- { cmd: "python -c 'import sys; print(sys.version)'" }
+- { cmd: "gh pr list --limit 20" }
+- { cmd: "gh run watch" }
+- { cmd: "gh repo view" }
+- { cmd: "date" }
+- { cmd: "uptime" }
+- { cmd: "uname -a" }
+- { cmd: "ps aux | grep node" }
+- { cmd: "lsof -i :3000", comment: "查端口占用" }
+- { cmd: "which node" }
+- { cmd: "env | sort" }
+- { cmd: "history | tail -30" }
+- { cmd: "free -h" }
+- { cmd: "crontab -l", comment: "只列出定时任务" }
+- { cmd: "brew list --versions node" }
+- { cmd: "ss -tlnp" }
